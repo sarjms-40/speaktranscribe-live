@@ -1,6 +1,6 @@
 
 import React from "react";
-import { Mic, MicOff } from "lucide-react";
+import { Mic, MicOff, Headset } from "lucide-react";
 
 interface RecordButtonProps {
   isRecording: boolean;
@@ -32,12 +32,12 @@ const RecordButton: React.FC<RecordButtonProps> = ({
       {isRecording ? (
         <>
           <MicOff size={18} />
-          <span>Stop Recording</span>
+          <span>End Call</span>
         </>
       ) : (
         <>
-          <Mic size={18} />
-          <span>Start Recording</span>
+          <Headset size={18} />
+          <span>Start Call</span>
         </>
       )}
     </button>

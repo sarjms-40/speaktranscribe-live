@@ -6,6 +6,7 @@ interface ISpeechRecognition extends EventTarget {
   continuous: boolean;
   interimResults: boolean;
   lang: string;
+  maxAlternatives: number;
   start: () => void;
   stop: () => void;
   abort: () => void;
@@ -46,11 +47,12 @@ export const useSpeechRecognition = () => {
     // Create a new recognition instance
     recognitionRef.current = new SpeechRecognitionAPI();
     
-    // Configure the recognition
+    // Configure the recognition for call center environment
     if (recognitionRef.current) {
       recognitionRef.current.continuous = true;
-      recognitionRef.current.interimResults = true;
+      recognitionRef.current.interimResults = true; // Get real-time interim results
       recognitionRef.current.lang = "en-US";
+      recognitionRef.current.maxAlternatives = 3; // Get multiple alternatives for better accuracy
     }
 
     return () => {
@@ -66,7 +68,8 @@ export const useSpeechRecognition = () => {
     if (!recognitionRef.current) return;
 
     const handleResult = (event: any) => {
-      let finalTranscript = "";
+      let interimTranscript = '';
+      let finalTranscript = '';
       
       // Process the results
       for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -74,13 +77,21 @@ export const useSpeechRecognition = () => {
         
         if (event.results[i].isFinal) {
           finalTranscript += transcript;
+        } else {
+          interimTranscript += transcript;
         }
       }
       
-      // Update the transcript if we have final results
-      if (finalTranscript) {
-        setTranscript((prev) => prev + (prev ? " " : "") + finalTranscript);
-      }
+      // Update the transcript with both final and interim results for real-time display
+      setTranscript((prev) => {
+        const updatedTranscript = finalTranscript 
+          ? prev + (prev ? " " : "") + finalTranscript 
+          : prev;
+          
+        return interimTranscript 
+          ? updatedTranscript + (updatedTranscript ? " " : "") + interimTranscript 
+          : updatedTranscript;
+      });
     };
 
     const handleError = (event: any) => {

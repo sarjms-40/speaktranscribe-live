@@ -3,6 +3,7 @@ import React from "react";
 import TranscriptionDisplay from "@/components/TranscriptionDisplay";
 import RecordButton from "@/components/RecordButton";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
+import { Headset, Volume2 } from "lucide-react";
 
 const Index = () => {
   const { 
@@ -22,22 +23,26 @@ const Index = () => {
             HIPAA Compliant
           </div>
           <h1 className="text-4xl sm:text-5xl font-light tracking-tight mb-2">
-            Speech Transcriber
+            <Headset className="inline-block mr-2 h-10 w-10" />
+            Call Center Assistant
           </h1>
           <p className="text-muted-foreground max-w-md mx-auto">
-            Convert your speech to text in real-time with privacy and security in mind.
-            No data is stored or sent to external servers.
+            Real-time customer speech transcription with zero latency.
+            All processing happens locally - no data is stored or transmitted.
           </p>
         </header>
 
         <main className="flex flex-col gap-6">
           <div className="glass-panel p-6 shadow-sm">
             <div className="flex flex-row items-center justify-between mb-4">
-              <h2 className="text-xl font-medium">Transcription</h2>
+              <h2 className="text-xl font-medium flex items-center">
+                <Volume2 className="h-5 w-5 mr-2" />
+                Customer Speech
+              </h2>
               {isRecording && (
                 <div className="flex items-center gap-2">
                   <div className="recording-dot animate-pulse-recording"></div>
-                  <span className="text-sm text-muted-foreground">Recording</span>
+                  <span className="text-sm text-muted-foreground">Call Active</span>
                 </div>
               )}
             </div>
@@ -73,7 +78,8 @@ const Index = () => {
 
         <footer className="text-center text-sm text-muted-foreground mt-8">
           <p>
-            All processing happens locally in your browser. No data is stored or transmitted.
+            HIPAA Compliant: All processing happens locally in your browser.
+            <br />No audio or transcripts are stored or transmitted to external servers.
           </p>
         </footer>
       </div>
