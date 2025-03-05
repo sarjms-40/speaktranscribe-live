@@ -22,13 +22,16 @@ const TranscriptionDisplay: React.FC<TranscriptionDisplayProps> = ({
   return (
     <div 
       ref={containerRef}
-      className="transcription-container min-h-[300px] max-h-[500px] font-light bg-white/50 dark:bg-black/30 p-4 rounded-lg border border-border/60 shadow-sm"
+      className="transcription-container min-h-[300px] max-h-[500px] font-light bg-white/50 dark:bg-black/30 p-4 rounded-lg border border-border/60 shadow-sm overflow-auto"
     >
       <div className="text-left">
         {transcript ? (
           <div>
             <div className="mb-2 text-xs text-muted-foreground">Customer Speech:</div>
             <p className="whitespace-pre-wrap break-words">{transcript}</p>
+            {isRecording && (
+              <div className="inline-block w-2 h-5 ml-1 bg-primary opacity-50 animate-pulse"></div>
+            )}
           </div>
         ) : (
           <div className="h-full flex items-center justify-center text-muted-foreground italic">
@@ -36,9 +39,6 @@ const TranscriptionDisplay: React.FC<TranscriptionDisplayProps> = ({
               ? "Listening to customer..." 
               : "Start a call to begin transcribing customer speech"}
           </div>
-        )}
-        {isRecording && transcript && (
-          <div className="inline-block w-2 h-5 ml-1 bg-primary opacity-50 animate-pulse"></div>
         )}
       </div>
     </div>

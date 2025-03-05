@@ -28,6 +28,10 @@ export const useSpeechRecognition = () => {
   
   // Reference to the SpeechRecognition instance
   const recognitionRef = useRef<ISpeechRecognition | null>(null);
+  // Reference to store final transcript parts to prevent duplication
+  const finalTranscriptRef = useRef<string>("");
+  // Reference to store the current interim results
+  const interimResultsRef = useRef<string>("");
 
   // Initialize speech recognition
   useEffect(() => {
@@ -68,30 +72,30 @@ export const useSpeechRecognition = () => {
     if (!recognitionRef.current) return;
 
     const handleResult = (event: any) => {
-      let interimTranscript = '';
-      let finalTranscript = '';
+      let currentInterimTranscript = '';
+      let newFinalTranscript = '';
       
       // Process the results
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const transcript = event.results[i][0].transcript;
         
         if (event.results[i].isFinal) {
-          finalTranscript += transcript;
+          newFinalTranscript += transcript + " ";
         } else {
-          interimTranscript += transcript;
+          currentInterimTranscript += transcript;
         }
       }
       
-      // Update the transcript with both final and interim results for real-time display
-      setTranscript((prev) => {
-        const updatedTranscript = finalTranscript 
-          ? prev + (prev ? " " : "") + finalTranscript 
-          : prev;
-          
-        return interimTranscript 
-          ? updatedTranscript + (updatedTranscript ? " " : "") + interimTranscript 
-          : updatedTranscript;
-      });
+      // Update the final transcript reference
+      if (newFinalTranscript) {
+        finalTranscriptRef.current += newFinalTranscript;
+      }
+      
+      // Store the current interim results
+      interimResultsRef.current = currentInterimTranscript;
+      
+      // Update the displayed transcript with both final and interim results
+      setTranscript(finalTranscriptRef.current + interimResultsRef.current);
     };
 
     const handleError = (event: any) => {
@@ -141,6 +145,10 @@ export const useSpeechRecognition = () => {
     }
     
     try {
+      // Reset the transcript references when starting a new recording
+      finalTranscriptRef.current = "";
+      interimResultsRef.current = "";
+      
       recognitionRef.current.start();
       setIsRecording(true);
     } catch (err) {
@@ -154,12 +162,21 @@ export const useSpeechRecognition = () => {
     if (recognitionRef.current) {
       recognitionRef.current.stop();
       setIsRecording(false);
+      
+      // Add any remaining interim results to the final transcript
+      if (interimResultsRef.current) {
+        finalTranscriptRef.current += interimResultsRef.current;
+        interimResultsRef.current = "";
+        setTranscript(finalTranscriptRef.current);
+      }
     }
   }, []);
 
   // Function to reset the transcript
   const resetTranscript = useCallback(() => {
     setTranscript("");
+    finalTranscriptRef.current = "";
+    interimResultsRef.current = "";
   }, []);
 
   return {
