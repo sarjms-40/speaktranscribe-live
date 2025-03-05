@@ -1,5 +1,4 @@
-
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useSpeechRecognition } from "./useSpeechRecognition";
 import dbService from "@/services/dbService";
 import { CallRecord } from "@/models/CallRecord";
@@ -11,6 +10,7 @@ export const useCallRecording = () => {
   const [callEndTime, setCallEndTime] = useState<Date | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [savedRecords, setSavedRecords] = useState<CallRecord[]>([]);
+  const autoSaveTimeoutRef = useRef<number | null>(null);
   
   const {
     transcript,
@@ -19,7 +19,16 @@ export const useCallRecording = () => {
     stopRecording,
     resetTranscript,
     error,
+    hasRecognitionEnded,
   } = useSpeechRecognition();
+
+  // Auto-save when recognition unexpectedly ends
+  useEffect(() => {
+    if (!isRecording && hasRecognitionEnded && callStartTime && transcript && !isSaving) {
+      console.log("Auto-saving call due to unexpected end of speech recognition");
+      endCall();
+    }
+  }, [isRecording, hasRecognitionEnded, callStartTime, transcript, isSaving]);
 
   // Initialize database
   useEffect(() => {
@@ -37,6 +46,30 @@ export const useCallRecording = () => {
   useEffect(() => {
     loadSavedRecords();
   }, []);
+
+  // Set up auto-save inactivity timer (save if no speech detected for 30 seconds)
+  useEffect(() => {
+    if (isRecording && transcript) {
+      // Clear any existing timeout
+      if (autoSaveTimeoutRef.current) {
+        window.clearTimeout(autoSaveTimeoutRef.current);
+      }
+      
+      // Set new timeout for auto-save after inactivity
+      autoSaveTimeoutRef.current = window.setTimeout(() => {
+        if (isRecording && callStartTime) {
+          console.log("Auto-saving call due to inactivity");
+          endCall();
+        }
+      }, 30000); // 30 seconds of inactivity
+    }
+    
+    return () => {
+      if (autoSaveTimeoutRef.current) {
+        window.clearTimeout(autoSaveTimeoutRef.current);
+      }
+    };
+  }, [isRecording, transcript]);
 
   const loadSavedRecords = useCallback(async () => {
     try {
@@ -59,7 +92,7 @@ export const useCallRecording = () => {
   }, [startRecording]);
 
   const endCall = useCallback(async () => {
-    if (!isRecording) return;
+    if (!callStartTime) return;
     
     stopRecording();
     const now = new Date();
@@ -101,7 +134,7 @@ export const useCallRecording = () => {
         setIsSaving(false);
       }
     }
-  }, [isRecording, stopRecording, callStartTime, transcript, toast, loadSavedRecords]);
+  }, [stopRecording, callStartTime, transcript, toast, loadSavedRecords]);
 
   const deleteRecord = useCallback(async (id: string) => {
     try {

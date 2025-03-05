@@ -25,6 +25,7 @@ export const useSpeechRecognition = () => {
   const [transcript, setTranscript] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasRecognitionEnded, setHasRecognitionEnded] = useState(false);
   
   // Reference to the SpeechRecognition instance
   const recognitionRef = useRef<ISpeechRecognition | null>(null);
@@ -32,6 +33,12 @@ export const useSpeechRecognition = () => {
   const finalTranscriptRef = useRef<string>("");
   // Reference to store the current interim results
   const interimResultsRef = useRef<string>("");
+  // Reference to track if stop was intentional
+  const intentionalStopRef = useRef<boolean>(false);
+  // Reference to track last activity time
+  const lastActivityRef = useRef<number>(Date.now());
+  // Reference to inactivity timer
+  const inactivityTimerRef = useRef<number | null>(null);
 
   // Initialize speech recognition
   useEffect(() => {
@@ -62,7 +69,11 @@ export const useSpeechRecognition = () => {
     return () => {
       // Clean up
       if (recognitionRef.current && isRecording) {
+        intentionalStopRef.current = true;
         recognitionRef.current.stop();
+      }
+      if (inactivityTimerRef.current) {
+        window.clearTimeout(inactivityTimerRef.current);
       }
     };
   }, []);
@@ -74,6 +85,9 @@ export const useSpeechRecognition = () => {
     const handleResult = (event: any) => {
       let currentInterimTranscript = '';
       let newFinalTranscript = '';
+      
+      // Update last activity time when we get results
+      lastActivityRef.current = Date.now();
       
       // Process the results
       for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -114,13 +128,32 @@ export const useSpeechRecognition = () => {
       };
       
       setError(errorMessages[event.error] || "An unknown error occurred.");
+      
+      // If it's not an intentional stop, mark it as unexpected end
+      if (!intentionalStopRef.current) {
+        setHasRecognitionEnded(true);
+      }
+      
       setIsRecording(false);
     };
 
     const handleEnd = () => {
+      console.log("Speech recognition ended, intentional:", intentionalStopRef.current);
+      
+      // If it wasn't an intentional stop, mark it as an unexpected end
+      if (!intentionalStopRef.current) {
+        setHasRecognitionEnded(true);
+        setIsRecording(false);
+      } else {
+        // Reset the flag if it was intentional
+        intentionalStopRef.current = false;
+      }
+      
       // Auto-restart recognition if we're still in recording state
-      if (isRecording && recognitionRef.current) {
+      // and it wasn't intentionally stopped
+      if (isRecording && recognitionRef.current && !intentionalStopRef.current) {
         try {
+          console.log("Auto-restarting speech recognition");
           recognitionRef.current.start();
         } catch (e) {
           console.log("Error restarting recognition:", e);
@@ -135,9 +168,39 @@ export const useSpeechRecognition = () => {
 
   }, [isRecording]);
 
+  // Set up inactivity detection
+  useEffect(() => {
+    if (isRecording) {
+      // Check for inactivity every 5 seconds
+      inactivityTimerRef.current = window.setInterval(() => {
+        const now = Date.now();
+        const inactivityTime = now - lastActivityRef.current;
+        
+        // If no activity for more than 10 seconds, consider it as a potential call end
+        if (inactivityTime > 10000) {
+          console.log(`No speech activity detected for ${inactivityTime/1000} seconds`);
+          setHasRecognitionEnded(true);
+        }
+      }, 5000);
+    } else {
+      // Clear the timer when not recording
+      if (inactivityTimerRef.current) {
+        window.clearInterval(inactivityTimerRef.current);
+        inactivityTimerRef.current = null;
+      }
+    }
+    
+    return () => {
+      if (inactivityTimerRef.current) {
+        window.clearInterval(inactivityTimerRef.current);
+      }
+    };
+  }, [isRecording]);
+
   // Function to start recording
   const startRecording = useCallback(() => {
     setError(null);
+    setHasRecognitionEnded(false);
     
     if (!recognitionRef.current) {
       setError("Speech recognition is not supported in this browser.");
@@ -148,6 +211,8 @@ export const useSpeechRecognition = () => {
       // Reset the transcript references when starting a new recording
       finalTranscriptRef.current = "";
       interimResultsRef.current = "";
+      intentionalStopRef.current = false;
+      lastActivityRef.current = Date.now();
       
       recognitionRef.current.start();
       setIsRecording(true);
@@ -160,6 +225,7 @@ export const useSpeechRecognition = () => {
   // Function to stop recording
   const stopRecording = useCallback(() => {
     if (recognitionRef.current) {
+      intentionalStopRef.current = true;
       recognitionRef.current.stop();
       setIsRecording(false);
       
@@ -177,6 +243,7 @@ export const useSpeechRecognition = () => {
     setTranscript("");
     finalTranscriptRef.current = "";
     interimResultsRef.current = "";
+    setHasRecognitionEnded(false);
   }, []);
 
   return {
@@ -186,5 +253,6 @@ export const useSpeechRecognition = () => {
     stopRecording,
     resetTranscript,
     error,
+    hasRecognitionEnded
   };
 };
