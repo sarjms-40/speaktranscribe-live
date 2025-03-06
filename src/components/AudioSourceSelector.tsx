@@ -1,6 +1,6 @@
 
 import React from "react";
-import { Headphones, Mic, Volume2 } from "lucide-react";
+import { Headphones, Mic, Volume2, Video } from "lucide-react";
 import { AudioSource } from "@/utils/systemAudioCapture";
 
 interface AudioSourceSelectorProps {
@@ -64,12 +64,33 @@ const AudioSourceSelector: React.FC<AudioSourceSelectorProps> = ({
           <Volume2 size={16} />
           <span>System Audio</span>
         </button>
+
+        <button
+          type="button"
+          onClick={() => onChange('meeting')}
+          disabled={disabled}
+          className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm ${
+            currentSource === 'meeting'
+              ? 'bg-primary text-primary-foreground'
+              : 'bg-secondary hover:bg-secondary/80'
+          } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+        >
+          <Video size={16} />
+          <span>Meeting Audio</span>
+        </button>
       </div>
       
       {currentSource === 'system' && (
         <div className="text-xs text-amber-500 mt-1 flex items-center gap-1">
           <span>⚠️</span>
-          <span>System audio capture may require screen sharing permission</span>
+          <span>System audio capture requires screen sharing permission</span>
+        </div>
+      )}
+
+      {currentSource === 'meeting' && (
+        <div className="text-xs text-amber-500 mt-1 flex items-center gap-1">
+          <span>⚠️</span>
+          <span>Meeting audio requires sharing the meeting application window</span>
         </div>
       )}
       

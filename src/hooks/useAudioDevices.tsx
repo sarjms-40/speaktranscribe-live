@@ -10,6 +10,24 @@ export const useAudioDevices = () => {
     microphones: [] 
   });
   const [deviceError, setDeviceError] = useState<string | null>(null);
+  const [isSystemAudioSupported, setIsSystemAudioSupported] = useState<boolean>(false);
+
+  // Check if system audio capture is supported
+  useEffect(() => {
+    const checkSystemAudioSupport = async () => {
+      try {
+        // @ts-ignore - TypeScript doesn't know about this experimental API
+        if (navigator.mediaDevices.getDisplayMedia) {
+          setIsSystemAudioSupported(true);
+        }
+      } catch (err) {
+        console.warn("System audio capture not supported:", err);
+        setIsSystemAudioSupported(false);
+      }
+    };
+    
+    checkSystemAudioSupport();
+  }, []);
 
   // Fetch available audio devices when component mounts
   useEffect(() => {
@@ -49,6 +67,7 @@ export const useAudioDevices = () => {
     audioSource,
     setAudioSource,
     availableDevices,
-    deviceError
+    deviceError,
+    isSystemAudioSupported
   };
 };

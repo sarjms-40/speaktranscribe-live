@@ -1,8 +1,8 @@
 
 import { useEffect, useCallback, useRef } from "react";
-import { AudioSource, getAudioStream } from "@/utils/systemAudioCapture";
+import { AudioSource, getAudioStream, SilenceDetector } from "@/utils/systemAudioCapture";
 import { initSpeechRecognition, getSpeechErrorMessage } from "@/utils/speechRecognitionUtils";
-import { ISpeechRecognition } from "@/types/speechRecognition";
+import { ISpeechRecognition, Speaker } from "@/types/speechRecognition";
 import { useAudioDevices } from "./useAudioDevices";
 import { useTranscriptionState } from "./useTranscriptionState";
 
@@ -30,6 +30,12 @@ export const useSpeechRecognition = () => {
   const inactivityTimerRef = useRef<number | null>(null);
   // Reference to audio stream
   const audioStreamRef = useRef<MediaStream | null>(null);
+  // Reference to AudioContext for processing
+  const audioContextRef = useRef<AudioContext | null>(null);
+  // Reference to silence detector
+  const silenceDetectorRef = useRef<SilenceDetector>(new SilenceDetector());
+  // Reference to detected speakers
+  const speakersRef = useRef<Speaker[]>([]);
 
   // Initialize speech recognition
   useEffect(() => {
@@ -53,6 +59,9 @@ export const useSpeechRecognition = () => {
       }
       if (audioStreamRef.current) {
         audioStreamRef.current.getTracks().forEach(track => track.stop());
+      }
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
       }
     };
   }, []);
@@ -182,6 +191,12 @@ export const useSpeechRecognition = () => {
       audioStreamRef.current = null;
     }
     
+    // Close AudioContext if it exists
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+    
     setAudioSource(source);
     setError(null);
     
@@ -211,9 +226,16 @@ export const useSpeechRecognition = () => {
       intentionalStopRef.current = false;
       lastActivityRef.current = Date.now();
       duplicateDetectorRef.current.reset();
+      silenceDetectorRef.current.reset();
       
       // Get audio stream for the selected source
-      const stream = await getAudioStream(audioSourceToUse);
+      const stream = await getAudioStream(audioSourceToUse, {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        sampleRate: 16000, // 16kHz is optimal for speech recognition
+        channelCount: 1,   // Mono is better for speech recognition
+      });
       
       if (!stream) {
         setError(`Could not access ${audioSourceToUse} audio. Please check permissions.`);
@@ -222,6 +244,47 @@ export const useSpeechRecognition = () => {
       
       // Store the stream for later cleanup
       audioStreamRef.current = stream;
+      
+      // Set up audio processing for enhanced features
+      if (window.AudioContext) {
+        audioContextRef.current = new AudioContext({
+          sampleRate: 16000,
+          latencyHint: 'interactive'
+        });
+        
+        // Create source node from the stream
+        const sourceNode = audioContextRef.current.createMediaStreamSource(stream);
+        
+        // Create analyzer for silence detection
+        const analyzerNode = audioContextRef.current.createAnalyser();
+        analyzerNode.fftSize = 2048;
+        const bufferLength = analyzerNode.frequencyBinCount;
+        const dataArray = new Float32Array(bufferLength);
+        
+        // Connect nodes
+        sourceNode.connect(analyzerNode);
+        
+        // Setup silence detection
+        const silenceCheckInterval = setInterval(() => {
+          if (!isRecording) {
+            clearInterval(silenceCheckInterval);
+            return;
+          }
+          
+          analyzerNode.getFloatTimeDomainData(dataArray);
+          const isSilent = silenceDetectorRef.current.isSilent(dataArray);
+          
+          if (isSilent) {
+            console.log("Silence detected");
+            // Silence detected - could be used to trigger events
+          }
+        }, 500);
+        
+        // Clean up the interval when recording stops
+        return () => {
+          clearInterval(silenceCheckInterval);
+        };
+      }
       
       recognitionRef.current.start();
       setIsRecording(true);
@@ -250,6 +313,12 @@ export const useSpeechRecognition = () => {
         audioStreamRef.current.getTracks().forEach(track => track.stop());
         audioStreamRef.current = null;
       }
+      
+      // Close the AudioContext
+      if (audioContextRef.current) {
+        audioContextRef.current.close().catch(console.error);
+        audioContextRef.current = null;
+      }
     }
   }, []);
 
@@ -266,6 +335,7 @@ export const useSpeechRecognition = () => {
     hasRecognitionEnded,
     audioSource,
     changeAudioSource,
-    availableDevices
+    availableDevices,
+    speakers: speakersRef.current
   };
 };

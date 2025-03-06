@@ -3,18 +3,19 @@
  * System Audio Capture Utility
  * 
  * This utility helps capture audio from system devices including headphones/earphones
- * Note: Due to browser security restrictions, capturing system audio requires user permissions
- * and may be limited on some browsers.
+ * and system audio (loopback) for capturing online meeting audio.
  */
 
 // Types for our audio sources
-export type AudioSource = 'microphone' | 'system' | 'headphones';
+export type AudioSource = 'microphone' | 'system' | 'headphones' | 'meeting';
 
 // Interface for audio capture options
 export interface AudioCaptureOptions {
   echoCancellation?: boolean;
   noiseSuppression?: boolean;
   autoGainControl?: boolean;
+  sampleRate?: number;
+  channelCount?: number;
 }
 
 // Default options optimized for call center environment
@@ -22,6 +23,8 @@ const DEFAULT_OPTIONS: AudioCaptureOptions = {
   echoCancellation: true,
   noiseSuppression: true,
   autoGainControl: true,
+  sampleRate: 16000, // 16kHz is optimal for speech recognition
+  channelCount: 1, // Mono is better for speech recognition
 };
 
 /**
@@ -42,6 +45,8 @@ export const getAudioStream = async (
         ...(source === 'headphones' && {
           deviceId: await getHeadphonesDeviceId(),
         }),
+        // For system audio and meeting audio, we'll need to use different approaches
+        // depending on the operating system and browser capabilities
       },
       video: false,
     };
@@ -49,16 +54,32 @@ export const getAudioStream = async (
     // Request user media with the appropriate constraints
     const stream = await navigator.mediaDevices.getUserMedia(constraints);
     
-    // For system audio, we would ideally use getDisplayMedia, but this has limitations
-    // and may require additional browser extensions or screen sharing
-    if (source === 'system') {
+    // Special handling for system audio and meeting audio
+    if (source === 'system' || source === 'meeting') {
       try {
-        // This is experimental and may not work in all browsers
+        // This uses the experimental getDisplayMedia API which can capture system audio
+        // on supported browsers and platforms
+        const displayMediaOptions: any = {
+          video: source === 'meeting' ? true : false, // Only include video for meeting capture
+          audio: {
+            // These are specific options for system audio capture
+            echoCancellation: false, // Don't cancel echo for system audio
+            noiseSuppression: options.noiseSuppression,
+            autoGainControl: options.autoGainControl,
+            latency: 0.01, // Request lowest possible latency
+            sampleRate: options.sampleRate || 16000,
+            channelCount: options.channelCount || 1,
+          },
+          // Request system audio (experimental)
+          systemAudio: 'include',
+          // For meeting we want the application window, for system audio just audio
+          displaySurface: source === 'meeting' ? 'window' : 'browser',
+          selfBrowserSurface: 'exclude', // Don't capture this browser window
+        };
+        
+        // This is the experimental call to get system audio
         // @ts-ignore - TypeScript doesn't know about this experimental API
-        const displayStream = await navigator.mediaDevices.getDisplayMedia({
-          video: true,
-          audio: true,
-        });
+        const displayStream = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions);
         
         // Get only the audio tracks from the display capture
         const audioTracks = displayStream.getAudioTracks();
@@ -68,12 +89,11 @@ export const getAudioStream = async (
           const systemAudioStream = new MediaStream(audioTracks);
           return systemAudioStream;
         } else {
-          console.warn("No audio track found in display media");
-          // Fall back to regular microphone if no system audio
+          console.warn("No system audio track found, falling back to microphone");
           return stream;
         }
       } catch (err) {
-        console.warn("System audio capture failed, falling back to microphone:", err);
+        console.warn(`${source} audio capture failed, falling back to microphone:`, err);
         return stream;
       }
     }
@@ -206,5 +226,49 @@ export class DuplicateSpeechDetector {
   
   public reset(): void {
     this.recentPhrases = [];
+  }
+}
+
+/**
+ * Analyze audio for silence detection - useful for detecting pauses in speech
+ */
+export class SilenceDetector {
+  private readonly threshold: number;
+  private readonly silenceDuration: number;
+  private lastSound: number = Date.now();
+  
+  constructor(threshold = 0.01, silenceDuration = 1000) {
+    this.threshold = threshold; // Volume level considered silence
+    this.silenceDuration = silenceDuration; // Duration of silence in ms
+  }
+  
+  /**
+   * Analyzes audio data to detect silence
+   * @param audioData - Float32Array of audio samples
+   * @returns true if silence is detected for the configured duration
+   */
+  public isSilent(audioData: Float32Array): boolean {
+    // Calculate RMS (root mean square) volume
+    let sum = 0;
+    for (let i = 0; i < audioData.length; i++) {
+      sum += audioData[i] * audioData[i];
+    }
+    const rms = Math.sqrt(sum / audioData.length);
+    
+    // If volume is above threshold, update last sound time
+    if (rms > this.threshold) {
+      this.lastSound = Date.now();
+      return false;
+    }
+    
+    // Check if silence duration exceeds threshold
+    return (Date.now() - this.lastSound) > this.silenceDuration;
+  }
+  
+  /**
+   * Reset the silence detector
+   */
+  public reset(): void {
+    this.lastSound = Date.now();
   }
 }

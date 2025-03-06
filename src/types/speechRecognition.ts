@@ -30,3 +30,23 @@ export interface AudioDevices {
   headphones: MediaDeviceInfo[];
   microphones: MediaDeviceInfo[];
 }
+
+// Speaker detection types
+export interface Speaker {
+  id: string;
+  name: string;
+  confidence: number;
+}
+
+export interface TranscriptionSegment {
+  text: string;
+  speaker?: Speaker;
+  timestamp: number;
+}
+
+// System audio capture types
+export interface SystemAudioOptions {
+  sampleRate: number;
+  channelCount: number;
+  latency: number;
+}
