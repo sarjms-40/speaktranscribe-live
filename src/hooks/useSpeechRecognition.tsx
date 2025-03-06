@@ -1,43 +1,27 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { AudioSource, getAudioStream, DuplicateSpeechDetector, getAvailableAudioDevices } from "../utils/systemAudioCapture";
 
-// Define the SpeechRecognition type
-interface ISpeechRecognition extends EventTarget {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  maxAlternatives: number;
-  start: () => void;
-  stop: () => void;
-  abort: () => void;
-  onresult: (event: any) => void;
-  onerror: (event: any) => void;
-  onend: () => void;
-}
-
-// Define the window with SpeechRecognition property
-interface IWindow extends Window {
-  SpeechRecognition: new () => ISpeechRecognition;
-  webkitSpeechRecognition: new () => ISpeechRecognition;
-}
+import { useEffect, useCallback, useRef } from "react";
+import { AudioSource, getAudioStream } from "@/utils/systemAudioCapture";
+import { initSpeechRecognition, getSpeechErrorMessage } from "@/utils/speechRecognitionUtils";
+import { ISpeechRecognition } from "@/types/speechRecognition";
+import { useAudioDevices } from "./useAudioDevices";
+import { useTranscriptionState } from "./useTranscriptionState";
 
 export const useSpeechRecognition = () => {
-  const [transcript, setTranscript] = useState("");
-  const [isRecording, setIsRecording] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [hasRecognitionEnded, setHasRecognitionEnded] = useState(false);
-  const [audioSource, setAudioSource] = useState<AudioSource>('microphone');
-  const [availableDevices, setAvailableDevices] = useState<{
-    headphones: MediaDeviceInfo[];
-    microphones: MediaDeviceInfo[];
-  }>({ headphones: [], microphones: [] });
+  const { 
+    audioSource, 
+    setAudioSource, 
+    availableDevices, 
+    deviceError 
+  } = useAudioDevices();
+  
+  const { 
+    state: { transcript, isRecording, error, hasRecognitionEnded },
+    setState: { setTranscript, setIsRecording, setError, setHasRecognitionEnded, resetTranscript },
+    refs: { finalTranscriptRef, interimResultsRef, duplicateDetectorRef }
+  } = useTranscriptionState();
   
   // Reference to the SpeechRecognition instance
   const recognitionRef = useRef<ISpeechRecognition | null>(null);
-  // Reference to store final transcript parts to prevent duplication
-  const finalTranscriptRef = useRef<string>("");
-  // Reference to store the current interim results
-  const interimResultsRef = useRef<string>("");
   // Reference to track if stop was intentional
   const intentionalStopRef = useRef<boolean>(false);
   // Reference to track last activity time
@@ -46,67 +30,16 @@ export const useSpeechRecognition = () => {
   const inactivityTimerRef = useRef<number | null>(null);
   // Reference to audio stream
   const audioStreamRef = useRef<MediaStream | null>(null);
-  // Duplicate speech detector
-  const duplicateDetectorRef = useRef<DuplicateSpeechDetector>(new DuplicateSpeechDetector());
-
-  // Fetch available audio devices when component mounts
-  useEffect(() => {
-    const loadDevices = async () => {
-      try {
-        // Request initial permission to access devices
-        await navigator.mediaDevices.getUserMedia({ audio: true });
-        const devices = await getAvailableAudioDevices();
-        setAvailableDevices(devices);
-        
-        // Auto-select headphones if available
-        if (devices.headphones.length > 0) {
-          setAudioSource('headphones');
-        }
-      } catch (err) {
-        console.error("Error loading audio devices:", err);
-        setError("Could not access audio devices. Please check your browser permissions.");
-      }
-    };
-    
-    loadDevices();
-    
-    // Listen for device changes (e.g., plugging in headphones)
-    const handleDeviceChange = async () => {
-      const devices = await getAvailableAudioDevices();
-      setAvailableDevices(devices);
-    };
-    
-    navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
-    
-    return () => {
-      navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange);
-    };
-  }, []);
 
   // Initialize speech recognition
   useEffect(() => {
-    // Check if browser supports speech recognition
-    const windowWithSpeech = window as unknown as IWindow;
-    const SpeechRecognitionAPI = 
-      windowWithSpeech.SpeechRecognition || 
-      windowWithSpeech.webkitSpeechRecognition;
-
-    if (!SpeechRecognitionAPI) {
+    // Initialize speech recognition API
+    recognitionRef.current = initSpeechRecognition();
+    
+    if (!recognitionRef.current) {
       setError(
         "Speech recognition is not supported in this browser. Try using Chrome, Edge, or Safari."
       );
-      return;
-    }
-
-    // Create a new recognition instance
-    recognitionRef.current = new SpeechRecognitionAPI();
-    
-    // Configure the recognition for call center environment
-    if (recognitionRef.current) {
-      recognitionRef.current.continuous = true;
-      recognitionRef.current.interimResults = true; // Get real-time interim results
-      recognitionRef.current.lang = "en-US";
-      recognitionRef.current.maxAlternatives = 3; // Get multiple alternatives for better accuracy
     }
 
     return () => {
@@ -166,18 +99,7 @@ export const useSpeechRecognition = () => {
       console.error("Speech recognition error:", event);
       
       // Map error codes to user-friendly messages
-      const errorMessages: Record<string, string> = {
-        "no-speech": "No speech was detected. Please try again.",
-        "aborted": "Speech recognition was aborted.",
-        "audio-capture": "No microphone was found or microphone access was denied.",
-        "network": "Network error occurred. Please check your connection.",
-        "not-allowed": "Microphone access was denied. Please allow microphone access.",
-        "service-not-allowed": "Speech recognition service is not allowed.",
-        "bad-grammar": "Error in speech grammar or language configuration.",
-        "language-not-supported": "The selected language is not supported.",
-      };
-      
-      setError(errorMessages[event.error] || "An unknown error occurred.");
+      setError(getSpeechErrorMessage(event.error));
       
       // If it's not an intentional stop, mark it as unexpected end
       if (!intentionalStopRef.current) {
@@ -331,13 +253,8 @@ export const useSpeechRecognition = () => {
     }
   }, []);
 
-  // Function to reset the transcript
-  const resetTranscript = useCallback(() => {
-    setTranscript("");
-    finalTranscriptRef.current = "";
-    interimResultsRef.current = "";
-    setHasRecognitionEnded(false);
-  }, []);
+  // Combine device error with speech recognition error
+  const combinedError = deviceError || error;
 
   return {
     transcript,
@@ -345,7 +262,7 @@ export const useSpeechRecognition = () => {
     startRecording,
     stopRecording,
     resetTranscript,
-    error,
+    error: combinedError,
     hasRecognitionEnded,
     audioSource,
     changeAudioSource,
