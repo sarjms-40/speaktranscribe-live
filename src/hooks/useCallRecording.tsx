@@ -27,6 +27,13 @@ export const useCallRecording = () => {
     availableDevices
   } = useSpeechRecognition();
 
+  // Define clearTranscript first so it can be used in other functions
+  const clearTranscript = useCallback(() => {
+    resetTranscript();
+    setCallStartTime(null);
+    setCallEndTime(null);
+  }, [resetTranscript]);
+
   // Auto-save when recognition unexpectedly ends
   useEffect(() => {
     if (!isRecording && hasRecognitionEnded && callStartTime && transcript && !isSaving) {
@@ -174,12 +181,6 @@ export const useCallRecording = () => {
       });
     }
   }, [toast, loadSavedRecords]);
-
-  const clearTranscript = useCallback(() => {
-    resetTranscript();
-    setCallStartTime(null);
-    setCallEndTime(null);
-  }, [resetTranscript]);
 
   return {
     transcript,
