@@ -25,7 +25,11 @@ const Index = () => {
     callStartTime,
     audioSource,
     changeAudioSource,
-    availableDevices
+    availableDevices,
+    isSystemAudioSupported,
+    segments,
+    speakers,
+    interimText
   } = useCallRecording();
 
   const handleStartCall = () => {
@@ -86,12 +90,16 @@ const Index = () => {
                 onChange={handleSourceChange}
                 availableDevices={availableDevices}
                 disabled={isRecording}
+                isSystemAudioSupported={isSystemAudioSupported}
               />
             </div>
             
             <TranscriptionDisplay 
               transcript={transcript} 
               isRecording={isRecording}
+              speakers={speakers}
+              segments={segments}
+              interimText={interimText}
             />
             
             {error && (

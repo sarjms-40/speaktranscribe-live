@@ -1,8 +1,8 @@
 
 import { useEffect, useCallback, useRef } from "react";
-import { AudioSource, getAudioStream, SilenceDetector } from "@/utils/systemAudioCapture";
+import { AudioSource, getAudioStream, SilenceDetector, createAudioProcessor, SpeakerDiarization } from "@/utils/systemAudioCapture";
 import { initSpeechRecognition, getSpeechErrorMessage } from "@/utils/speechRecognitionUtils";
-import { ISpeechRecognition, Speaker } from "@/types/speechRecognition";
+import { ISpeechRecognition, Speaker, TranscriptionSegment } from "@/types/speechRecognition";
 import { useAudioDevices } from "./useAudioDevices";
 import { useTranscriptionState } from "./useTranscriptionState";
 
@@ -11,7 +11,8 @@ export const useSpeechRecognition = () => {
     audioSource, 
     setAudioSource, 
     availableDevices, 
-    deviceError 
+    deviceError,
+    isSystemAudioSupported 
   } = useAudioDevices();
   
   const { 
@@ -32,10 +33,18 @@ export const useSpeechRecognition = () => {
   const audioStreamRef = useRef<MediaStream | null>(null);
   // Reference to AudioContext for processing
   const audioContextRef = useRef<AudioContext | null>(null);
+  // Reference to audio processor cleanup function
+  const audioProcessorCleanupRef = useRef<(() => void) | null>(null);
   // Reference to silence detector
   const silenceDetectorRef = useRef<SilenceDetector>(new SilenceDetector());
+  // Reference to speaker diarization
+  const speakerDiarizationRef = useRef<SpeakerDiarization>(new SpeakerDiarization());
   // Reference to detected speakers
   const speakersRef = useRef<Speaker[]>([]);
+  // Reference to transcription segments
+  const segmentsRef = useRef<TranscriptionSegment[]>([]);
+  // Reference to current interim segment
+  const interimSegmentRef = useRef<string>("");
 
   // Initialize speech recognition
   useEffect(() => {
@@ -63,7 +72,58 @@ export const useSpeechRecognition = () => {
       if (audioContextRef.current) {
         audioContextRef.current.close();
       }
+      if (audioProcessorCleanupRef.current) {
+        audioProcessorCleanupRef.current();
+      }
     };
+  }, []);
+
+  // Update segments when we get a new final transcript
+  const updateTranscriptionSegments = useCallback((text: string, isFinal: boolean) => {
+    // Only update segments for final results or if we're processing system audio
+    if (!isFinal && audioSource !== 'system' && audioSource !== 'meeting') return;
+    
+    if (isFinal) {
+      // Store interim text as final
+      const newSegment: TranscriptionSegment = {
+        text,
+        timestamp: Date.now(),
+        speaker: detectSpeaker()
+      };
+      
+      segmentsRef.current = [...segmentsRef.current, newSegment];
+      interimSegmentRef.current = "";
+    } else {
+      // Update interim text
+      interimSegmentRef.current = text;
+    }
+  }, [audioSource]);
+  
+  // Helper to detect speaker
+  const detectSpeaker = useCallback((): Speaker | undefined => {
+    // For now we'll use a simple approach - assign based on known speakers
+    const speakerCount = speakersRef.current.length;
+    const { speakerId, confidence } = speakerDiarizationRef.current.detectSpeakerChange(new Float32Array(0));
+    
+    // Use existing speaker if we have one with this ID
+    const existingSpeaker = speakersRef.current.find(s => s.id === `speaker-${speakerId}`);
+    if (existingSpeaker) {
+      return existingSpeaker;
+    }
+    
+    // Create a new speaker
+    const newSpeaker: Speaker = {
+      id: `speaker-${speakerId}`,
+      name: `Speaker ${speakerId}`,
+      confidence: confidence
+    };
+    
+    // Add to speakers list if new
+    if (speakerCount < 5) { // Limit to 5 speakers for simplicity
+      speakersRef.current = [...speakersRef.current, newSpeaker];
+    }
+    
+    return newSpeaker;
   }, []);
 
   // Add event handlers for the recognition instance
@@ -86,9 +146,15 @@ export const useSpeechRecognition = () => {
           const { hasDuplicates, cleanedText } = duplicateDetectorRef.current.checkForDuplicates(transcript);
           if (!hasDuplicates && cleanedText) {
             newFinalTranscript += cleanedText + " ";
+            
+            // Add to segments
+            updateTranscriptionSegments(cleanedText, true);
           }
         } else {
           currentInterimTranscript += transcript;
+          
+          // Update interim segment
+          updateTranscriptionSegments(currentInterimTranscript, false);
         }
       }
       
@@ -147,7 +213,7 @@ export const useSpeechRecognition = () => {
     recognitionRef.current.onerror = handleError;
     recognitionRef.current.onend = handleEnd;
 
-  }, [isRecording]);
+  }, [isRecording, updateTranscriptionSegments]);
 
   // Set up inactivity detection
   useEffect(() => {
@@ -197,6 +263,12 @@ export const useSpeechRecognition = () => {
       audioContextRef.current = null;
     }
     
+    // Clean up audio processor if it exists
+    if (audioProcessorCleanupRef.current) {
+      audioProcessorCleanupRef.current();
+      audioProcessorCleanupRef.current = null;
+    }
+    
     setAudioSource(source);
     setError(null);
     
@@ -223,10 +295,14 @@ export const useSpeechRecognition = () => {
       // Reset the transcript references when starting a new recording
       finalTranscriptRef.current = "";
       interimResultsRef.current = "";
+      interimSegmentRef.current = "";
+      segmentsRef.current = [];
       intentionalStopRef.current = false;
       lastActivityRef.current = Date.now();
       duplicateDetectorRef.current.reset();
       silenceDetectorRef.current.reset();
+      speakerDiarizationRef.current.reset();
+      speakersRef.current = [];
       
       // Get audio stream for the selected source
       const stream = await getAudioStream(audioSourceToUse, {
@@ -252,38 +328,27 @@ export const useSpeechRecognition = () => {
           latencyHint: 'interactive'
         });
         
-        // Create source node from the stream
-        const sourceNode = audioContextRef.current.createMediaStreamSource(stream);
-        
-        // Create analyzer for silence detection
-        const analyzerNode = audioContextRef.current.createAnalyser();
-        analyzerNode.fftSize = 2048;
-        const bufferLength = analyzerNode.frequencyBinCount;
-        const dataArray = new Float32Array(bufferLength);
-        
-        // Connect nodes
-        sourceNode.connect(analyzerNode);
-        
-        // Setup silence detection
-        const silenceCheckInterval = setInterval(() => {
-          if (!isRecording) {
-            clearInterval(silenceCheckInterval);
-            return;
+        // Set up audio processor for analysis (VAD, speaker detection)
+        audioProcessorCleanupRef.current = createAudioProcessor(
+          stream,
+          audioContextRef.current,
+          (audioData) => {
+            // Process audio data for silence detection
+            const isSilent = silenceDetectorRef.current.isSilent(audioData);
+            
+            if (isSilent) {
+              console.log("Silence detected");
+              // Silence detected - could be used to trigger events
+            }
+            
+            // Process audio for speaker detection (only if we have system audio)
+            if (audioSourceToUse === 'system' || audioSourceToUse === 'meeting') {
+              // Detect potential speaker changes
+              const speakerResult = speakerDiarizationRef.current.detectSpeakerChange(audioData);
+              console.log("Speaker detection:", speakerResult);
+            }
           }
-          
-          analyzerNode.getFloatTimeDomainData(dataArray);
-          const isSilent = silenceDetectorRef.current.isSilent(dataArray);
-          
-          if (isSilent) {
-            console.log("Silence detected");
-            // Silence detected - could be used to trigger events
-          }
-        }, 500);
-        
-        // Clean up the interval when recording stops
-        return () => {
-          clearInterval(silenceCheckInterval);
-        };
+        );
       }
       
       recognitionRef.current.start();
@@ -305,6 +370,13 @@ export const useSpeechRecognition = () => {
       if (interimResultsRef.current) {
         finalTranscriptRef.current += interimResultsRef.current;
         interimResultsRef.current = "";
+        
+        // Add interim as final segment if there's content
+        if (interimSegmentRef.current) {
+          updateTranscriptionSegments(interimSegmentRef.current, true);
+          interimSegmentRef.current = "";
+        }
+        
         setTranscript(finalTranscriptRef.current);
       }
       
@@ -314,13 +386,19 @@ export const useSpeechRecognition = () => {
         audioStreamRef.current = null;
       }
       
+      // Clean up audio processor
+      if (audioProcessorCleanupRef.current) {
+        audioProcessorCleanupRef.current();
+        audioProcessorCleanupRef.current = null;
+      }
+      
       // Close the AudioContext
       if (audioContextRef.current) {
         audioContextRef.current.close().catch(console.error);
         audioContextRef.current = null;
       }
     }
-  }, []);
+  }, [updateTranscriptionSegments]);
 
   // Combine device error with speech recognition error
   const combinedError = deviceError || error;
@@ -336,6 +414,9 @@ export const useSpeechRecognition = () => {
     audioSource,
     changeAudioSource,
     availableDevices,
-    speakers: speakersRef.current
+    isSystemAudioSupported,
+    speakers: speakersRef.current,
+    segments: segmentsRef.current,
+    interimText: interimSegmentRef.current
   };
 };

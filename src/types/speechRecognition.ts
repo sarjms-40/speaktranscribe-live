@@ -50,3 +50,9 @@ export interface SystemAudioOptions {
   channelCount: number;
   latency: number;
 }
+
+// Enhanced transcription with speaker segments
+export interface EnhancedTranscription {
+  segments: TranscriptionSegment[];
+  fullText: string;
+}

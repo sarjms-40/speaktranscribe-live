@@ -74,17 +74,29 @@ export const checkSystemAudioSupport = async (): Promise<boolean> => {
       return false;
     }
     
-    // Test if system audio can be captured (without actually getting permission)
-    // This is just to check if the browser has the capability
-    const constraints = {
-      video: false,
-      audio: true,
-      // @ts-ignore - TypeScript doesn't know about this experimental property
-      systemAudio: 'include'
-    };
-    
-    // We don't actually need to execute this, just check if the API exists
-    return true;
+    // Some browsers support getDisplayMedia but not system audio capture
+    // We need to try to actually capture system audio to confirm
+    try {
+      const constraints = {
+        video: false,
+        audio: true,
+        // @ts-ignore - TypeScript doesn't know about this experimental property
+        systemAudio: 'include'
+      };
+      
+      // @ts-ignore
+      const stream = await navigator.mediaDevices.getDisplayMedia(constraints);
+      const hasAudioTracks = stream.getAudioTracks().length > 0;
+      
+      // Clean up
+      stream.getTracks().forEach(track => track.stop());
+      
+      return hasAudioTracks;
+    } catch (err) {
+      // If we get a security or permission error, it might still be supported
+      const errMsg = err instanceof Error ? err.message : String(err);
+      return errMsg.includes("security") || errMsg.includes("permission");
+    }
   } catch (err) {
     console.warn("System audio capture not supported:", err);
     return false;
@@ -110,4 +122,12 @@ export const getAvailableSpeechLanguages = (): { code: string; name: string }[] 
     { code: "nl-NL", name: "Dutch" },
     { code: "hi-IN", name: "Hindi" },
   ];
+};
+
+/**
+ * Generate pseudo-random speaker ID
+ * For more accurate speaker diarization, ML models would be better
+ */
+export const generateSpeakerId = (): string => {
+  return `speaker-${Math.floor(Math.random() * 1000)}`;
 };

@@ -1,17 +1,22 @@
 
 import React, { useEffect, useRef, useState } from "react";
-import { Speaker } from "@/types/speechRecognition";
+import { Speaker, TranscriptionSegment } from "@/types/speechRecognition";
+import SpeakerSegment from "./SpeakerSegment";
 
 interface TranscriptionDisplayProps {
   transcript: string;
   isRecording: boolean;
   speakers?: Speaker[];
+  segments?: TranscriptionSegment[];
+  interimText?: string;
 }
 
 const TranscriptionDisplay: React.FC<TranscriptionDisplayProps> = ({
   transcript,
   isRecording,
-  speakers = []
+  speakers = [],
+  segments = [],
+  interimText = ""
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [words, setWords] = useState<string[]>([]);
@@ -32,7 +37,7 @@ const TranscriptionDisplay: React.FC<TranscriptionDisplayProps> = ({
     if (containerRef.current) {
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
     }
-  }, [transcript]);
+  }, [transcript, segments, interimText]);
 
   // Animated appearance of words
   const getWordStyle = (index: number) => {
@@ -43,29 +48,65 @@ const TranscriptionDisplay: React.FC<TranscriptionDisplayProps> = ({
     };
   };
 
+  // Display modes - segmented with speakers or raw transcript
+  const hasSegments = segments && segments.length > 0;
+
   return (
     <div 
       ref={containerRef}
       className="transcription-container min-h-[300px] max-h-[500px] font-light bg-white/50 dark:bg-black/30 p-4 rounded-lg border border-border/60 shadow-sm overflow-auto"
     >
       <div className="text-left">
-        {transcript ? (
+        {transcript || hasSegments ? (
           <div>
             <div className="mb-2 text-xs text-muted-foreground">Real-time Speech:</div>
-            <p className="whitespace-pre-wrap break-words">
-              {words.map((word, index) => (
-                <span 
-                  key={index} 
-                  className="inline-block animate-fade-in" 
-                  style={getWordStyle(index)}
-                >
-                  {word}{' '}
-                </span>
-              ))}
-              {isRecording && (
-                <span className="inline-block w-2 h-5 ml-1 bg-primary opacity-50 animate-pulse"></span>
-              )}
-            </p>
+            
+            {/* Speaker segmented view */}
+            {hasSegments && (
+              <div className="space-y-2">
+                {segments.map((segment, index) => (
+                  <SpeakerSegment 
+                    key={`${index}-${segment.timestamp}`}
+                    speaker={segment.speaker}
+                    text={segment.text}
+                  />
+                ))}
+                
+                {/* Show interim results if available */}
+                {interimText && (
+                  <SpeakerSegment 
+                    // Use the last speaker for interim text
+                    speaker={segments.length > 0 ? segments[segments.length - 1].speaker : undefined}
+                    text={interimText}
+                    isInterim={true}
+                  />
+                )}
+              </div>
+            )}
+            
+            {/* Raw transcript view (used when no segments are available) */}
+            {!hasSegments && (
+              <p className="whitespace-pre-wrap break-words">
+                {words.map((word, index) => (
+                  <span 
+                    key={index} 
+                    className="inline-block animate-fade-in" 
+                    style={getWordStyle(index)}
+                  >
+                    {word}{' '}
+                  </span>
+                ))}
+                {isRecording && interimText && (
+                  <span className="text-muted-foreground">
+                    {interimText}{' '}
+                    <span className="inline-block w-2 h-5 ml-1 bg-primary opacity-50 animate-pulse"></span>
+                  </span>
+                )}
+                {isRecording && !interimText && (
+                  <span className="inline-block w-2 h-5 ml-1 bg-primary opacity-50 animate-pulse"></span>
+                )}
+              </p>
+            )}
           </div>
         ) : (
           <div className="h-full flex items-center justify-center text-muted-foreground italic">

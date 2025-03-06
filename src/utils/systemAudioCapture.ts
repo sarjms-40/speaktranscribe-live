@@ -45,8 +45,6 @@ export const getAudioStream = async (
         ...(source === 'headphones' && {
           deviceId: await getHeadphonesDeviceId(),
         }),
-        // For system audio and meeting audio, we'll need to use different approaches
-        // depending on the operating system and browser capabilities
       },
       video: false,
     };
@@ -57,7 +55,7 @@ export const getAudioStream = async (
     // Special handling for system audio and meeting audio
     if (source === 'system' || source === 'meeting') {
       try {
-        // This uses the experimental getDisplayMedia API which can capture system audio
+        // This uses the getDisplayMedia API which can capture system audio
         // on supported browsers and platforms
         const displayMediaOptions: any = {
           video: source === 'meeting' ? true : false, // Only include video for meeting capture
@@ -70,26 +68,28 @@ export const getAudioStream = async (
             sampleRate: options.sampleRate || 16000,
             channelCount: options.channelCount || 1,
           },
-          // Request system audio (experimental)
-          systemAudio: 'include',
+          // Request system audio
+          systemAudio: source === 'system' ? 'include' : 'exclude',
           // For meeting we want the application window, for system audio just audio
           displaySurface: source === 'meeting' ? 'window' : 'browser',
           selfBrowserSurface: 'exclude', // Don't capture this browser window
+          suppressLocalAudioPlayback: false, // Don't mute the audio while capturing
         };
         
-        // This is the experimental call to get system audio
-        // @ts-ignore - TypeScript doesn't know about this experimental API
+        // This is the call to get system audio
+        // @ts-ignore - TypeScript doesn't know about some of these experimental API options
         const displayStream = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions);
         
         // Get only the audio tracks from the display capture
         const audioTracks = displayStream.getAudioTracks();
         
         if (audioTracks.length > 0) {
+          console.log(`Captured ${audioTracks.length} audio tracks from ${source}`);
           // Create a new stream with just the audio from screen capture
           const systemAudioStream = new MediaStream(audioTracks);
           return systemAudioStream;
         } else {
-          console.warn("No system audio track found, falling back to microphone");
+          console.warn(`No ${source} audio track found, falling back to microphone`);
           return stream;
         }
       } catch (err) {
@@ -157,6 +157,40 @@ export const getAvailableAudioDevices = async (): Promise<{
     console.error("Error getting audio devices:", error);
     return { headphones: [], microphones: [] };
   }
+};
+
+/**
+ * Creates an audio processor to analyze audio in real-time
+ * Used for features like VAD (voice activity detection), speaker diarization etc.
+ */
+export const createAudioProcessor = (
+  stream: MediaStream, 
+  audioContext: AudioContext,
+  onAudioProcess: (audioData: Float32Array) => void,
+  bufferSize = 4096
+): () => void => {
+  // Create source from stream
+  const source = audioContext.createMediaStreamSource(stream);
+  
+  // Create script processor for audio analysis
+  // @ts-ignore - AudioContext.createScriptProcessor is deprecated but still widely supported
+  const processor = audioContext.createScriptProcessor(bufferSize, 1, 1);
+  
+  // Process audio data
+  processor.onaudioprocess = (e) => {
+    const input = e.inputBuffer.getChannelData(0);
+    onAudioProcess(input);
+  };
+  
+  // Connect nodes
+  source.connect(processor);
+  processor.connect(audioContext.destination);
+  
+  // Return cleanup function
+  return () => {
+    processor.disconnect();
+    source.disconnect();
+  };
 };
 
 /**
@@ -230,7 +264,7 @@ export class DuplicateSpeechDetector {
 }
 
 /**
- * Analyze audio for silence detection - useful for detecting pauses in speech
+ * VAD (Voice Activity Detection) - detect voice vs. silence
  */
 export class SilenceDetector {
   private readonly threshold: number;
@@ -270,5 +304,82 @@ export class SilenceDetector {
    */
   public reset(): void {
     this.lastSound = Date.now();
+  }
+}
+
+/**
+ * Simple speaker diarization using energy-based segmentation
+ * This is a best-effort approach for browser environments
+ */
+export class SpeakerDiarization {
+  private energyThreshold: number = 0.02;
+  private speakerChangeThreshold: number = 0.3;
+  private prevEnergy: number = 0;
+  private speakerId: number = 1;
+  private lastSpeakerId: number = 1;
+  private stabilityCounter: number = 0;
+  
+  /**
+   * Detects potential speaker changes based on energy patterns
+   * This is a simplified approach and not as accurate as ML-based diarization
+   */
+  public detectSpeakerChange(audioData: Float32Array): { 
+    speakerId: number;
+    confidence: number;
+  } {
+    // Calculate current energy (simple RMS)
+    const energy = this.calculateEnergy(audioData);
+    
+    // If silence, return last speaker
+    if (energy < this.energyThreshold) {
+      return { speakerId: this.lastSpeakerId, confidence: 0.5 };
+    }
+    
+    // Check for energy ratio change (potential speaker change)
+    const energyRatio = energy / (this.prevEnergy || energy);
+    const normalizedRatio = Math.min(energyRatio, 1/energyRatio);
+    
+    // If energy pattern changed significantly, potential new speaker
+    if (normalizedRatio < this.speakerChangeThreshold) {
+      this.stabilityCounter++;
+      
+      // Only change speaker after a few consistent frames to avoid fluctuation
+      if (this.stabilityCounter > 3) {
+        this.speakerId = this.speakerId === 1 ? 2 : 1; // Toggle between speakers
+        this.lastSpeakerId = this.speakerId;
+        this.stabilityCounter = 0;
+      }
+    } else {
+      this.stabilityCounter = 0;
+    }
+    
+    // Update previous energy
+    this.prevEnergy = energy;
+    
+    // Calculate confidence based on how strong the energy change was
+    const confidence = Math.min(
+      1.0, 
+      Math.max(0.5, 1.0 - normalizedRatio)
+    );
+    
+    return { 
+      speakerId: this.lastSpeakerId,
+      confidence
+    };
+  }
+  
+  private calculateEnergy(audioData: Float32Array): number {
+    let sum = 0;
+    for (let i = 0; i < audioData.length; i++) {
+      sum += audioData[i] * audioData[i];
+    }
+    return Math.sqrt(sum / audioData.length);
+  }
+  
+  public reset(): void {
+    this.prevEnergy = 0;
+    this.speakerId = 1;
+    this.lastSpeakerId = 1;
+    this.stabilityCounter = 0;
   }
 }

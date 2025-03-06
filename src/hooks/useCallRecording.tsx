@@ -13,6 +13,15 @@ export const useCallRecording = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [savedRecords, setSavedRecords] = useState<CallRecord[]>([]);
   const autoSaveTimeoutRef = useRef<number | null>(null);
+
+  // Define clearTranscript first so it can be used in other functions
+  const clearTranscript = useCallback(() => {
+    if (resetTranscript) {
+      resetTranscript();
+    }
+    setCallStartTime(null);
+    setCallEndTime(null);
+  }, []);
   
   const {
     transcript,
@@ -24,15 +33,12 @@ export const useCallRecording = () => {
     hasRecognitionEnded,
     audioSource,
     changeAudioSource,
-    availableDevices
+    availableDevices,
+    isSystemAudioSupported,
+    segments,
+    speakers,
+    interimText
   } = useSpeechRecognition();
-
-  // Define clearTranscript first so it can be used in other functions
-  const clearTranscript = useCallback(() => {
-    resetTranscript();
-    setCallStartTime(null);
-    setCallEndTime(null);
-  }, [resetTranscript]);
 
   // Auto-save when recognition unexpectedly ends
   useEffect(() => {
@@ -196,6 +202,10 @@ export const useCallRecording = () => {
     callEndTime,
     audioSource,
     changeAudioSource,
-    availableDevices
+    availableDevices,
+    isSystemAudioSupported,
+    segments,
+    speakers,
+    interimText
   };
 };
