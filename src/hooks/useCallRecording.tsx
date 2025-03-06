@@ -1,3 +1,4 @@
+
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useSpeechRecognition } from "./useSpeechRecognition";
 import dbService from "@/services/dbService";
@@ -137,6 +138,9 @@ export const useCallRecording = () => {
         
         // Refresh the records list
         await loadSavedRecords();
+        
+        // Automatically clear the transcript after saving
+        clearTranscript();
       } catch (err) {
         console.error("Error saving call:", err);
         toast({
@@ -147,8 +151,11 @@ export const useCallRecording = () => {
       } finally {
         setIsSaving(false);
       }
+    } else {
+      // If there's no transcript to save, just clear everything
+      clearTranscript();
     }
-  }, [stopRecording, callStartTime, transcript, toast, loadSavedRecords]);
+  }, [stopRecording, callStartTime, transcript, toast, loadSavedRecords, clearTranscript]);
 
   const deleteRecord = useCallback(async (id: string) => {
     try {
