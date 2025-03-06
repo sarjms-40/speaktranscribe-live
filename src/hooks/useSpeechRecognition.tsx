@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { AudioSource, getAudioStream, DuplicateSpeechDetector } from "../utils/systemAudioCapture";
+import { AudioSource, getAudioStream, DuplicateSpeechDetector, getAvailableAudioDevices } from "../utils/systemAudioCapture";
 
 // Define the SpeechRecognition type
 interface ISpeechRecognition extends EventTarget {
