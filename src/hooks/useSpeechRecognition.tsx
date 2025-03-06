@@ -1,5 +1,5 @@
-
 import { useState, useEffect, useCallback, useRef } from "react";
+import { AudioSource, getAudioStream, DuplicateSpeechDetector } from "../utils/systemAudioCapture";
 
 // Define the SpeechRecognition type
 interface ISpeechRecognition extends EventTarget {
@@ -26,6 +26,11 @@ export const useSpeechRecognition = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasRecognitionEnded, setHasRecognitionEnded] = useState(false);
+  const [audioSource, setAudioSource] = useState<AudioSource>('microphone');
+  const [availableDevices, setAvailableDevices] = useState<{
+    headphones: MediaDeviceInfo[];
+    microphones: MediaDeviceInfo[];
+  }>({ headphones: [], microphones: [] });
   
   // Reference to the SpeechRecognition instance
   const recognitionRef = useRef<ISpeechRecognition | null>(null);
@@ -39,6 +44,44 @@ export const useSpeechRecognition = () => {
   const lastActivityRef = useRef<number>(Date.now());
   // Reference to inactivity timer
   const inactivityTimerRef = useRef<number | null>(null);
+  // Reference to audio stream
+  const audioStreamRef = useRef<MediaStream | null>(null);
+  // Duplicate speech detector
+  const duplicateDetectorRef = useRef<DuplicateSpeechDetector>(new DuplicateSpeechDetector());
+
+  // Fetch available audio devices when component mounts
+  useEffect(() => {
+    const loadDevices = async () => {
+      try {
+        // Request initial permission to access devices
+        await navigator.mediaDevices.getUserMedia({ audio: true });
+        const devices = await getAvailableAudioDevices();
+        setAvailableDevices(devices);
+        
+        // Auto-select headphones if available
+        if (devices.headphones.length > 0) {
+          setAudioSource('headphones');
+        }
+      } catch (err) {
+        console.error("Error loading audio devices:", err);
+        setError("Could not access audio devices. Please check your browser permissions.");
+      }
+    };
+    
+    loadDevices();
+    
+    // Listen for device changes (e.g., plugging in headphones)
+    const handleDeviceChange = async () => {
+      const devices = await getAvailableAudioDevices();
+      setAvailableDevices(devices);
+    };
+    
+    navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
+    
+    return () => {
+      navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange);
+    };
+  }, []);
 
   // Initialize speech recognition
   useEffect(() => {
@@ -75,6 +118,9 @@ export const useSpeechRecognition = () => {
       if (inactivityTimerRef.current) {
         window.clearTimeout(inactivityTimerRef.current);
       }
+      if (audioStreamRef.current) {
+        audioStreamRef.current.getTracks().forEach(track => track.stop());
+      }
     };
   }, []);
 
@@ -94,7 +140,11 @@ export const useSpeechRecognition = () => {
         const transcript = event.results[i][0].transcript;
         
         if (event.results[i].isFinal) {
-          newFinalTranscript += transcript + " ";
+          // Check for duplicates before adding final transcript
+          const { hasDuplicates, cleanedText } = duplicateDetectorRef.current.checkForDuplicates(transcript);
+          if (!hasDuplicates && cleanedText) {
+            newFinalTranscript += cleanedText + " ";
+          }
         } else {
           currentInterimTranscript += transcript;
         }
@@ -197,8 +247,30 @@ export const useSpeechRecognition = () => {
     };
   }, [isRecording]);
 
+  // Function to change audio source
+  const changeAudioSource = useCallback(async (source: AudioSource) => {
+    // Stop current recording if active
+    if (isRecording) {
+      stopRecording();
+    }
+    
+    // Stop any existing audio stream
+    if (audioStreamRef.current) {
+      audioStreamRef.current.getTracks().forEach(track => track.stop());
+      audioStreamRef.current = null;
+    }
+    
+    setAudioSource(source);
+    setError(null);
+    
+    // If we're already recording, restart with new source
+    if (isRecording) {
+      await startRecording(source);
+    }
+  }, [isRecording]);
+
   // Function to start recording
-  const startRecording = useCallback(() => {
+  const startRecording = useCallback(async (source?: AudioSource) => {
     setError(null);
     setHasRecognitionEnded(false);
     
@@ -207,12 +279,27 @@ export const useSpeechRecognition = () => {
       return;
     }
     
+    // Use provided source or current source
+    const audioSourceToUse = source || audioSource;
+    
     try {
       // Reset the transcript references when starting a new recording
       finalTranscriptRef.current = "";
       interimResultsRef.current = "";
       intentionalStopRef.current = false;
       lastActivityRef.current = Date.now();
+      duplicateDetectorRef.current.reset();
+      
+      // Get audio stream for the selected source
+      const stream = await getAudioStream(audioSourceToUse);
+      
+      if (!stream) {
+        setError(`Could not access ${audioSourceToUse} audio. Please check permissions.`);
+        return;
+      }
+      
+      // Store the stream for later cleanup
+      audioStreamRef.current = stream;
       
       recognitionRef.current.start();
       setIsRecording(true);
@@ -220,7 +307,7 @@ export const useSpeechRecognition = () => {
       console.error("Error starting speech recognition:", err);
       setError("Failed to start speech recognition. Please try again.");
     }
-  }, []);
+  }, [audioSource]);
 
   // Function to stop recording
   const stopRecording = useCallback(() => {
@@ -234,6 +321,12 @@ export const useSpeechRecognition = () => {
         finalTranscriptRef.current += interimResultsRef.current;
         interimResultsRef.current = "";
         setTranscript(finalTranscriptRef.current);
+      }
+      
+      // Stop the audio stream
+      if (audioStreamRef.current) {
+        audioStreamRef.current.getTracks().forEach(track => track.stop());
+        audioStreamRef.current = null;
       }
     }
   }, []);
@@ -253,6 +346,9 @@ export const useSpeechRecognition = () => {
     stopRecording,
     resetTranscript,
     error,
-    hasRecognitionEnded
+    hasRecognitionEnded,
+    audioSource,
+    changeAudioSource,
+    availableDevices
   };
 };

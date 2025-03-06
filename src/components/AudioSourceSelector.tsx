@@ -1,0 +1,85 @@
+
+import React from "react";
+import { Headphones, Mic, Volume2 } from "lucide-react";
+import { AudioSource } from "@/utils/systemAudioCapture";
+
+interface AudioSourceSelectorProps {
+  currentSource: AudioSource;
+  onChange: (source: AudioSource) => void;
+  availableDevices: {
+    headphones: MediaDeviceInfo[];
+    microphones: MediaDeviceInfo[];
+  };
+  disabled?: boolean;
+}
+
+const AudioSourceSelector: React.FC<AudioSourceSelectorProps> = ({
+  currentSource,
+  onChange,
+  availableDevices,
+  disabled = false
+}) => {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="text-sm font-medium mb-1">Audio Source</div>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => onChange('microphone')}
+          disabled={disabled}
+          className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm ${
+            currentSource === 'microphone'
+              ? 'bg-primary text-primary-foreground'
+              : 'bg-secondary hover:bg-secondary/80'
+          } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+        >
+          <Mic size={16} />
+          <span>Microphone {availableDevices.microphones.length > 0 && `(${availableDevices.microphones.length})`}</span>
+        </button>
+        
+        <button
+          type="button"
+          onClick={() => onChange('headphones')}
+          disabled={disabled || availableDevices.headphones.length === 0}
+          className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm ${
+            currentSource === 'headphones'
+              ? 'bg-primary text-primary-foreground'
+              : 'bg-secondary hover:bg-secondary/80'
+          } ${(disabled || availableDevices.headphones.length === 0) ? 'opacity-50 cursor-not-allowed' : ''}`}
+        >
+          <Headphones size={16} />
+          <span>Headphones {availableDevices.headphones.length > 0 && `(${availableDevices.headphones.length})`}</span>
+        </button>
+        
+        <button
+          type="button"
+          onClick={() => onChange('system')}
+          disabled={disabled}
+          className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm ${
+            currentSource === 'system'
+              ? 'bg-primary text-primary-foreground'
+              : 'bg-secondary hover:bg-secondary/80'
+          } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+        >
+          <Volume2 size={16} />
+          <span>System Audio</span>
+        </button>
+      </div>
+      
+      {currentSource === 'system' && (
+        <div className="text-xs text-amber-500 mt-1 flex items-center gap-1">
+          <span>⚠️</span>
+          <span>System audio capture may require screen sharing permission</span>
+        </div>
+      )}
+      
+      {availableDevices.headphones.length === 0 && (
+        <div className="text-xs text-muted-foreground mt-1">
+          No headphones detected. Please connect headphones for better call quality.
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default AudioSourceSelector;

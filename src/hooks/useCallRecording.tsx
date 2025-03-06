@@ -3,6 +3,7 @@ import { useSpeechRecognition } from "./useSpeechRecognition";
 import dbService from "@/services/dbService";
 import { CallRecord } from "@/models/CallRecord";
 import { useToast } from "@/components/ui/use-toast";
+import { AudioSource } from "@/utils/systemAudioCapture";
 
 export const useCallRecording = () => {
   const { toast } = useToast();
@@ -20,6 +21,9 @@ export const useCallRecording = () => {
     resetTranscript,
     error,
     hasRecognitionEnded,
+    audioSource,
+    changeAudioSource,
+    availableDevices
   } = useSpeechRecognition();
 
   // Auto-save when recognition unexpectedly ends
@@ -85,11 +89,21 @@ export const useCallRecording = () => {
     }
   }, [toast]);
 
-  const startCall = useCallback(() => {
+  const startCall = useCallback(async (source?: AudioSource) => {
     const now = new Date();
     setCallStartTime(now);
-    startRecording();
-  }, [startRecording]);
+    
+    if (source) {
+      await changeAudioSource(source);
+    }
+    
+    await startRecording();
+    
+    toast({
+      title: "Call Started",
+      description: `Using ${source || audioSource} as audio source`,
+    });
+  }, [startRecording, changeAudioSource, audioSource, toast]);
 
   const endCall = useCallback(async () => {
     if (!callStartTime) return;
@@ -172,5 +186,8 @@ export const useCallRecording = () => {
     clearTranscript,
     callStartTime,
     callEndTime,
+    audioSource,
+    changeAudioSource,
+    availableDevices
   };
 };
