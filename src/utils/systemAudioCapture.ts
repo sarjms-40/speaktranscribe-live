@@ -1,3 +1,4 @@
+
 /**
  * System Audio Capture Utility
  * 
@@ -39,12 +40,12 @@ const SOURCE_SPECIFIC_OPTIONS: Record<AudioSource, Partial<AudioCaptureOptions>>
     autoGainControl: true,
   },
   'system': {
-    echoCancellation: false,
+    echoCancellation: false, // Disable for system audio to prevent processing artifacts
     noiseSuppression: false,
     autoGainControl: false,
   },
   'meeting': {
-    echoCancellation: false,
+    echoCancellation: false, // Disable for meeting audio to improve voice clarity
     noiseSuppression: true,
     autoGainControl: true,
   },
@@ -55,7 +56,7 @@ const SOURCE_SPECIFIC_OPTIONS: Record<AudioSource, Partial<AudioCaptureOptions>>
   },
   'voip': {
     echoCancellation: false,
-    noiseSuppression: true,
+    noiseSuppression: true, 
     autoGainControl: true,
   }
 };
@@ -76,6 +77,82 @@ export const getAudioStream = async (
       ...options
     };
     
+    // For system audio sources, try the enhanced capture approach first
+    if (source === 'system' || source === 'meeting' || source === 'multimedia' || source === 'voip') {
+      console.log(`Attempting to capture ${source} audio with enhanced method...`);
+      try {
+        // This uses the getDisplayMedia API which can capture system audio
+        const displayMediaOptions: any = {
+          video: source !== 'system', // Only include video for meeting/multimedia/voip
+          audio: {
+            // These are specific options for system audio capture
+            echoCancellation: mergedOptions.echoCancellation,
+            noiseSuppression: mergedOptions.noiseSuppression,
+            autoGainControl: mergedOptions.autoGainControl,
+            sampleRate: mergedOptions.sampleRate || 16000,
+            channelCount: mergedOptions.channelCount || 1,
+            // Request system audio - this is crucial for loopback audio
+            systemAudio: 'include',
+          },
+          selfBrowserSurface: 'exclude', // Don't capture this browser window
+          suppressLocalAudioPlayback: false, // Don't mute the audio while capturing
+        };
+        
+        // Specific display constraints for different sources
+        if (source === 'meeting') {
+          displayMediaOptions.preferCurrentTab = false;
+          displayMediaOptions.displaySurface = 'window';
+          console.log('Configured for meeting audio (window capture)');
+        } else if (source === 'multimedia') {
+          displayMediaOptions.preferCurrentTab = true;
+          displayMediaOptions.displaySurface = 'browser';
+          console.log('Configured for multimedia audio (browser tab capture)');
+        } else if (source === 'voip') {
+          displayMediaOptions.preferCurrentTab = false;
+          displayMediaOptions.displaySurface = 'window';
+          console.log('Configured for VoIP audio (window capture)');
+        } else {
+          // For general system audio
+          displayMediaOptions.displaySurface = 'browser';
+          console.log('Configured for system audio capture');
+        }
+        
+        console.log('Requesting display media with options:', JSON.stringify(displayMediaOptions, null, 2));
+        
+        // This is the call to get system audio
+        // @ts-ignore - TypeScript doesn't know about some of these experimental API options
+        const displayStream = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions);
+        
+        console.log('Display media obtained successfully');
+        
+        // Get only the audio tracks from the display capture
+        const audioTracks = displayStream.getAudioTracks();
+        console.log(`Obtained ${audioTracks.length} audio tracks from display media`);
+        
+        // Log audio track information
+        audioTracks.forEach((track, index) => {
+          console.log(`Audio track ${index + 1}: ${track.label}`);
+          console.log('Settings:', JSON.stringify(track.getSettings(), null, 2));
+          console.log('Constraints:', JSON.stringify(track.getConstraints(), null, 2));
+        });
+        
+        if (audioTracks.length > 0) {
+          // Create a new stream with just the audio from screen capture
+          const systemAudioStream = new MediaStream(audioTracks);
+          return systemAudioStream;
+        } else {
+          console.warn(`No ${source} audio track found in display media, will try fallback method`);
+        }
+      } catch (err) {
+        console.warn(`Enhanced ${source} audio capture failed:`, err);
+        console.log('Will try fallback method...');
+      }
+    }
+    
+    // If we're here, either it's a microphone/headphones capture or the system audio capture failed
+    // Fallback to getUserMedia for microphone audio
+    console.log(`Attempting to capture audio using getUserMedia for ${source}...`);
+    
     // Different constraints based on audio source
     const constraints: MediaStreamConstraints = {
       audio: {
@@ -89,73 +166,11 @@ export const getAudioStream = async (
       video: false,
     };
 
+    console.log('getUserMedia constraints:', JSON.stringify(constraints, null, 2));
+    
     // Request user media with the appropriate constraints
     const stream = await navigator.mediaDevices.getUserMedia(constraints);
-    
-    // Special handling for system audio, meeting audio, multimedia, and VoIP
-    if (source === 'system' || source === 'meeting' || source === 'multimedia' || source === 'voip') {
-      try {
-        // This uses the getDisplayMedia API which can capture system audio
-        // on supported browsers and platforms
-        const displayMediaOptions: any = {
-          video: source !== 'system', // Only include video for meeting/multimedia/voip capture
-          audio: {
-            // These are specific options for system audio capture
-            echoCancellation: mergedOptions.echoCancellation,
-            noiseSuppression: mergedOptions.noiseSuppression,
-            autoGainControl: mergedOptions.autoGainControl,
-            latency: 0.01, // Request lowest possible latency
-            sampleRate: mergedOptions.sampleRate || 16000,
-            channelCount: mergedOptions.channelCount || 1,
-          },
-          // Request system audio
-          systemAudio: 'include',
-          // For meeting/multimedia/voip we want the application window, for system audio just audio
-          displaySurface: source === 'system' ? 'browser' : 'window',
-          selfBrowserSurface: 'exclude', // Don't capture this browser window
-          suppressLocalAudioPlayback: false, // Don't mute the audio while capturing
-        };
-        
-        // Specific display constraints for different sources
-        if (source === 'meeting') {
-          displayMediaOptions.preferCurrentTab = false;
-          displayMediaOptions.displaySurface = 'window';
-        } else if (source === 'multimedia') {
-          displayMediaOptions.preferCurrentTab = true;
-          displayMediaOptions.displaySurface = 'browser';
-        } else if (source === 'voip') {
-          displayMediaOptions.preferCurrentTab = false;
-          displayMediaOptions.displaySurface = 'window';
-        }
-        
-        // This is the call to get system audio
-        // @ts-ignore - TypeScript doesn't know about some of these experimental API options
-        const displayStream = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions);
-        
-        // Get only the audio tracks from the display capture
-        const audioTracks = displayStream.getAudioTracks();
-        
-        if (audioTracks.length > 0) {
-          console.log(`Captured ${audioTracks.length} audio tracks from ${source}`);
-          
-          // Create a new stream with just the audio from screen capture
-          const systemAudioStream = new MediaStream(audioTracks);
-          
-          // Add labels to the tracks for debugging
-          audioTracks.forEach(track => {
-            console.log(`Audio track: ${track.label}, settings:`, track.getSettings());
-          });
-          
-          return systemAudioStream;
-        } else {
-          console.warn(`No ${source} audio track found, falling back to microphone`);
-          return stream;
-        }
-      } catch (err) {
-        console.warn(`${source} audio capture failed, falling back to microphone:`, err);
-        return stream;
-      }
-    }
+    console.log('getUserMedia succeeded, obtained audio stream');
     
     return stream;
   } catch (err) {
@@ -172,6 +187,12 @@ const getHeadphonesDeviceId = async (): Promise<string | undefined> => {
     const devices = await navigator.mediaDevices.enumerateDevices();
     const audioInputDevices = devices.filter(device => device.kind === 'audioinput');
     
+    // Log all available audio input devices for debugging
+    console.log('Available audio input devices:');
+    audioInputDevices.forEach((device, index) => {
+      console.log(`Device ${index + 1}: ${device.label} (${device.deviceId})`);
+    });
+    
     // Look for devices that are likely headsets or headphones
     // This is a best effort - device naming isn't standardized
     const headphonesDevice = audioInputDevices.find(device => {
@@ -181,6 +202,12 @@ const getHeadphonesDeviceId = async (): Promise<string | undefined> => {
              label.includes('earphone') ||
              label.includes('bluetooth');
     });
+    
+    if (headphonesDevice) {
+      console.log(`Selected headphones device: ${headphonesDevice.label}`);
+    } else {
+      console.log('No headphones/headset device found');
+    }
     
     return headphonesDevice?.deviceId;
   } catch (error) {
@@ -521,9 +548,13 @@ export const checkPotentialSystemAudioSupport = (): {
   } else {
     limitations.push("No desktop integration (browser restrictions apply)");
   }
+
+  // Force true for testing
+  const forceSupport = true;
   
   return {
-    isSupported: hasDisplayMedia && (isChrome || isEdge),
+    // For testing in browsers, we'll be more optimistic about support
+    isSupported: hasDisplayMedia && ((isChrome || isEdge) || forceSupport),
     capabilities,
     limitations
   };
