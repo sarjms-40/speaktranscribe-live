@@ -1,4 +1,3 @@
-
 import { ISpeechRecognition, IWindow } from "@/types/speechRecognition";
 
 /**
@@ -101,8 +100,7 @@ export const checkSystemAudioSupport = async (): Promise<{
           label: track.label,
           settings: {
             channelCount: settings.channelCount,
-            sampleRate: settings.sampleRate,
-            latency: settings.latency,
+            sampleRate: settings.sampleRate
           }
         };
       });

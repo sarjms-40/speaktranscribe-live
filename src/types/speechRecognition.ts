@@ -1,4 +1,3 @@
-
 // Types for speech recognition functionality
 
 export interface ISpeechRecognition extends EventTarget {
@@ -48,7 +47,6 @@ export interface TranscriptionSegment {
 export interface SystemAudioOptions {
   sampleRate: number;
   channelCount: number;
-  latency: number;
 }
 
 // Enhanced transcription with speaker segments
