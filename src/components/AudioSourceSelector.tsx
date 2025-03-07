@@ -117,20 +117,58 @@ const AudioSourceSelector: React.FC<AudioSourceSelectorProps> = ({
         </button>
       </div>
       
-      {currentSource === 'system' && (
-        <div className="text-xs bg-amber-500/10 p-2 rounded border border-amber-500/20 mt-1 flex items-center gap-1">
-          <span>⚠️</span>
-          <span><strong>Important:</strong> When prompted, you MUST check "Share audio" or "Share system audio" checkbox when sharing your screen.</span>
+      {(currentSource === 'system' || currentSource === 'meeting' || currentSource === 'multimedia' || currentSource === 'voip') && (
+        <div className="text-xs bg-amber-500/10 p-3 rounded border border-amber-500/20 mt-1 flex flex-col gap-1 animate-pulse">
+          <span className="flex items-center gap-1 font-semibold text-amber-700 dark:text-amber-400">
+            ⚠️ IMPORTANT: You MUST check "Share audio" checkbox!
+          </span>
+          <ol className="list-decimal ml-5 space-y-1 text-amber-700 dark:text-amber-400">
+            <li>When the browser sharing dialog appears, select the window you want to capture</li>
+            <li><strong className="underline">Check the "Share system audio" or "Share audio" checkbox</strong></li>
+            <li>Then click the Share button</li>
+          </ol>
+          <div className="mt-1 text-amber-700 dark:text-amber-400">
+            <strong>Without checking "Share audio", no sound will be captured!</strong>
+          </div>
         </div>
       )}
 
-      {(currentSource === 'meeting' || currentSource === 'multimedia' || currentSource === 'voip') && (
-        <div className="text-xs bg-amber-500/10 p-2 rounded border border-amber-500/20 mt-1 flex flex-col gap-1">
-          <span className="flex items-center gap-1"><span>⚠️</span> <strong>Important:</strong></span>
+      {currentSource === 'system' && (
+        <div className="text-xs bg-amber-500/10 p-2 rounded border border-amber-500/20 mt-1 flex items-center gap-1">
+          <span>ℹ️</span>
+          <span>Choose this option to capture <strong>all system sounds</strong> including application audio, alerts, etc.</span>
+        </div>
+      )}
+
+      {currentSource === 'meeting' && (
+        <div className="text-xs bg-blue-500/10 p-2 rounded border border-blue-500/20 mt-1 flex flex-col gap-1">
+          <span className="flex items-center gap-1 font-semibold"><span>🎯</span> <strong>Best for Zoom, Teams, Meet, etc:</strong></span>
           <ul className="list-disc ml-5 space-y-1">
-            <li>Select the specific window or application (Zoom, Teams, browser with YouTube, etc.)</li>
-            <li>Make sure to check "Share audio" or "Share system audio" checkbox</li>
-            <li>For meeting apps, try sharing the entire application window, not just a specific area</li>
+            <li>Select the specific meeting application window</li>
+            <li>Make sure to check "Share audio" when prompted</li>
+            <li>Works best in Chrome or Edge browsers</li>
+          </ul>
+        </div>
+      )}
+
+      {currentSource === 'multimedia' && (
+        <div className="text-xs bg-blue-500/10 p-2 rounded border border-blue-500/20 mt-1 flex flex-col gap-1">
+          <span className="flex items-center gap-1 font-semibold"><span>🎬</span> <strong>Best for YouTube, Videos & Training:</strong></span>
+          <ul className="list-disc ml-5 space-y-1">
+            <li>Select the browser tab playing the video/content</li>
+            <li>Make sure to check "Share audio" when prompted</li>
+            <li>For best results, try sharing a specific tab rather than the whole window</li>
+          </ul>
+        </div>
+      )}
+      
+      {currentSource === 'voip' && (
+        <div className="text-xs bg-blue-500/10 p-2 rounded border border-blue-500/20 mt-1 flex flex-col gap-1">
+          <span className="flex items-center gap-1 font-semibold"><span>☎️</span> <strong>Best for Call Centers & VoIP Calls:</strong></span>
+          <ul className="list-disc ml-5 space-y-1">
+            <li>Select your VoIP or call center application window</li>
+            <li>Make sure to check "Share audio" when prompted</li>
+            <li>This mode is optimized for capturing customer voices</li>
           </ul>
         </div>
       )}
@@ -151,13 +189,14 @@ const AudioSourceSelector: React.FC<AudioSourceSelectorProps> = ({
       <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/20 rounded-md text-blue-700 dark:text-blue-300 text-xs">
         <p className="font-medium mb-1">📢 How to use system/meeting audio:</p>
         <ol className="list-decimal ml-5 space-y-1">
-          <li>Select "System Audio", "Meeting Audio", or other option above</li>
-          <li>Click "Start Recording" button below</li>
-          <li>When prompted to share your screen, select application window (Zoom, Teams, etc.)</li>
-          <li><strong>IMPORTANT:</strong> Check the "Share system audio" checkbox before clicking Share</li>
-          <li>Speak or play audio to see the transcription appear</li>
+          <li>Select the appropriate audio source above</li>
+          <li>Click the "Start Recording" button below</li>
+          <li>When the browser asks to share your screen:</li>
+          <li className="font-semibold underline">Check the "Share system audio" or "Share audio" checkbox</li>
+          <li>Then click the Share button</li>
+          <li>The transcription will appear as audio is captured</li>
         </ol>
-        <p className="mt-2">For full system audio capture with no limitations, a dedicated desktop application is required.</p>
+        <p className="mt-2">For full system audio capture with no limitations, try our desktop application.</p>
       </div>
     </div>
   );

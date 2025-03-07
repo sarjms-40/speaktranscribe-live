@@ -2,8 +2,10 @@
 import { useState, useEffect } from "react";
 import { AudioSource, getAvailableAudioDevices, checkPotentialSystemAudioSupport } from "@/utils/systemAudioCapture";
 import { AudioDevices } from "@/types/speechRecognition";
+import { useToast } from "@/components/ui/use-toast";
 
 export const useAudioDevices = () => {
+  const { toast } = useToast();
   const [audioSource, setAudioSource] = useState<AudioSource>('microphone');
   const [availableDevices, setAvailableDevices] = useState<AudioDevices>({ 
     headphones: [], 
@@ -39,11 +41,17 @@ export const useAudioDevices = () => {
                 frameRate: 1
               },
               audio: true,
-              // @ts-ignore - Experimental property
+              // Request system audio explicitly
               systemAudio: 'include'
             };
             
             console.log("Testing system audio capture with constraints:", JSON.stringify(constraints, null, 2));
+            
+            toast({
+              title: "System Audio Test",
+              description: "Please select any window and check 'Share audio' for best experience.",
+              duration: 5000,
+            });
             
             // @ts-ignore
             const testStream = await navigator.mediaDevices.getDisplayMedia(constraints);
@@ -58,6 +66,18 @@ export const useAudioDevices = () => {
               audioTracks.forEach((track, i) => {
                 console.log(`Audio track ${i + 1}: ${track.label}`);
                 console.log(`Settings:`, JSON.stringify(track.getSettings(), null, 2));
+              });
+              
+              toast({
+                title: "System Audio Supported!",
+                description: "Your browser successfully captured system audio.",
+                variant: "default",
+              });
+            } else {
+              toast({
+                title: "No Audio Detected",
+                description: "Did you check 'Share audio' in the dialog? Try again and make sure to enable audio sharing.",
+                variant: "destructive",
               });
             }
             
@@ -76,6 +96,12 @@ export const useAudioDevices = () => {
             // even if the test failed due to permissions
             setIsSystemAudioSupported(true);
             console.log("Setting system audio as potentially supported");
+            
+            toast({
+              title: "System Audio May Work",
+              description: "We couldn't fully test system audio, but you can still try it.",
+              variant: "default",
+            });
           }
         }
       } catch (err) {
@@ -83,11 +109,17 @@ export const useAudioDevices = () => {
         // We'll be optimistic and still allow users to try system audio
         // This is a better UX than blocking it completely
         setIsSystemAudioSupported(true);
+        
+        toast({
+          title: "Audio Support Uncertain",
+          description: "We couldn't verify system audio support, but you can still try it.",
+          variant: "default",
+        });
       }
     };
     
     checkSystemAudioSupport();
-  }, []);
+  }, [toast]);
 
   // Fetch available audio devices when component mounts
   useEffect(() => {
@@ -106,10 +138,22 @@ export const useAudioDevices = () => {
         if (devices.headphones.length > 0) {
           console.log("Auto-selecting headphones as audio source");
           setAudioSource('headphones');
+          
+          toast({
+            title: "Headphones Detected",
+            description: "Using headphones for better audio quality.",
+            duration: 3000,
+          });
         }
       } catch (err) {
         console.error("Error loading audio devices:", err);
         setDeviceError("Could not access audio devices. Please check your browser permissions.");
+        
+        toast({
+          title: "Microphone Access Needed",
+          description: "Please allow microphone access in your browser settings.",
+          variant: "destructive",
+        });
       }
     };
     
@@ -120,6 +164,16 @@ export const useAudioDevices = () => {
       console.log("Audio device change detected");
       const devices = await getAvailableAudioDevices();
       setAvailableDevices(devices);
+      
+      // If headphones were just connected and we're using microphone
+      if (devices.headphones.length > 0 && audioSource === 'microphone') {
+        setAudioSource('headphones');
+        toast({
+          title: "Headphones Connected",
+          description: "Switched to headphones for better audio quality.",
+          duration: 3000,
+        });
+      }
     };
     
     navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
@@ -127,7 +181,7 @@ export const useAudioDevices = () => {
     return () => {
       navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange);
     };
-  }, []);
+  }, [toast, audioSource]);
 
   return {
     audioSource,
