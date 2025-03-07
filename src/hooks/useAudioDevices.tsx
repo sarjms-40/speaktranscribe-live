@@ -14,7 +14,7 @@ export const useAudioDevices = () => {
   const [deviceError, setDeviceError] = useState<string | null>(null);
   const [isSystemAudioSupported, setIsSystemAudioSupported] = useState<boolean>(false);
 
-  // Check if system audio capture is supported
+  // Check if system audio capture is supported, but don't test by default
   useEffect(() => {
     const checkSystemAudioSupport = async () => {
       try {
@@ -27,99 +27,109 @@ export const useAudioDevices = () => {
         // Start optimistic - if browser checks indicate support, we'll start as true
         // This helps users try system audio even if detection isn't perfect
         setIsSystemAudioSupported(systemSupport.isSupported);
-        
-        // In browsers, we'll be more permissive about allowing users to try
-        // system audio even if we're not 100% sure it will work
-        // @ts-ignore - TypeScript doesn't know about this experimental API
-        if (navigator.mediaDevices.getDisplayMedia) {
-          // Try to actually request display media with audio
-          try {
-            const constraints = {
-              video: {
-                width: 1,     // Request minimal video
-                height: 1,
-                frameRate: 1
-              },
-              audio: true,
-              // Request system audio explicitly
-              systemAudio: 'include'
-            };
-            
-            console.log("Testing system audio capture with constraints:", JSON.stringify(constraints, null, 2));
-            
-            toast({
-              title: "System Audio Test",
-              description: "Please select any window and check 'Share audio' for best experience.",
-              duration: 5000,
-            });
-            
-            // @ts-ignore
-            const testStream = await navigator.mediaDevices.getDisplayMedia(constraints);
-            
-            // If we get here, check if we actually got an audio track
-            const audioTracks = testStream.getAudioTracks();
-            const hasAudioTrack = audioTracks.length > 0;
-            console.log(`Test captured ${audioTracks.length} audio tracks`);
-            
-            if (hasAudioTrack) {
-              // Log the tracks for debugging
-              audioTracks.forEach((track, i) => {
-                console.log(`Audio track ${i + 1}: ${track.label}`);
-                console.log(`Settings:`, JSON.stringify(track.getSettings(), null, 2));
-              });
-              
-              toast({
-                title: "System Audio Supported!",
-                description: "Your browser successfully captured system audio.",
-                variant: "default",
-              });
-            } else {
-              toast({
-                title: "No Audio Detected",
-                description: "Did you check 'Share audio' in the dialog? Try again and make sure to enable audio sharing.",
-                variant: "destructive",
-              });
-            }
-            
-            // Clean up the test stream
-            testStream.getTracks().forEach(track => track.stop());
-            
-            // If we got an audio track, system audio is definitely supported
-            setIsSystemAudioSupported(hasAudioTrack);
-            console.log("System audio test result:", hasAudioTrack ? "Supported" : "Not supported");
-          } catch (innerErr) {
-            // If we get a security error, it might be supported but requires user permission
-            const errMsg = innerErr instanceof Error ? innerErr.message : String(innerErr);
-            console.log("Error during system audio test:", errMsg);
-            
-            // Be optimistic - if we have the API, we'll let users try it
-            // even if the test failed due to permissions
-            setIsSystemAudioSupported(true);
-            console.log("Setting system audio as potentially supported");
-            
-            toast({
-              title: "System Audio May Work",
-              description: "We couldn't fully test system audio, but you can still try it.",
-              variant: "default",
-            });
-          }
-        }
       } catch (err) {
         console.warn("System audio capture check failed:", err);
         // We'll be optimistic and still allow users to try system audio
-        // This is a better UX than blocking it completely
         setIsSystemAudioSupported(true);
-        
-        toast({
-          title: "Audio Support Uncertain",
-          description: "We couldn't verify system audio support, but you can still try it.",
-          variant: "default",
-        });
       }
     };
     
     checkSystemAudioSupport();
   }, [toast]);
+
+  // Test system audio only when explicitly requested
+  const testSystemAudio = async () => {
+    try {
+      // @ts-ignore - TypeScript doesn't know about this experimental API
+      if (navigator.mediaDevices.getDisplayMedia) {
+        // Try to actually request display media with audio
+        try {
+          const constraints = {
+            video: {
+              width: 1,     // Request minimal video
+              height: 1,
+              frameRate: 1
+            },
+            audio: true,
+            // Request system audio explicitly
+            systemAudio: 'include'
+          };
+          
+          console.log("Testing system audio capture with constraints:", JSON.stringify(constraints, null, 2));
+          
+          toast({
+            title: "System Audio Test",
+            description: "Please select any window and check 'Share audio' for best experience.",
+            duration: 5000,
+          });
+          
+          // @ts-ignore
+          const testStream = await navigator.mediaDevices.getDisplayMedia(constraints);
+          
+          // If we get here, check if we actually got an audio track
+          const audioTracks = testStream.getAudioTracks();
+          const hasAudioTrack = audioTracks.length > 0;
+          console.log(`Test captured ${audioTracks.length} audio tracks`);
+          
+          if (hasAudioTrack) {
+            // Log the tracks for debugging
+            audioTracks.forEach((track, i) => {
+              console.log(`Audio track ${i + 1}: ${track.label}`);
+              console.log(`Settings:`, JSON.stringify(track.getSettings(), null, 2));
+            });
+            
+            toast({
+              title: "System Audio Supported!",
+              description: "Your browser successfully captured system audio.",
+              variant: "default",
+            });
+          } else {
+            toast({
+              title: "No Audio Detected",
+              description: "Did you check 'Share audio' in the dialog? Try again and make sure to enable audio sharing.",
+              variant: "destructive",
+            });
+          }
+          
+          // Clean up the test stream
+          testStream.getTracks().forEach(track => track.stop());
+          
+          // If we got an audio track, system audio is definitely supported
+          setIsSystemAudioSupported(hasAudioTrack);
+          console.log("System audio test result:", hasAudioTrack ? "Supported" : "Not supported");
+          
+          return hasAudioTrack;
+        } catch (innerErr) {
+          // If we get a security error, it might be supported but requires user permission
+          const errMsg = innerErr instanceof Error ? innerErr.message : String(innerErr);
+          console.log("Error during system audio test:", errMsg);
+          
+          // Be optimistic - if we have the API, we'll let users try it
+          // even if the test failed due to permissions
+          setIsSystemAudioSupported(true);
+          console.log("Setting system audio as potentially supported");
+          
+          toast({
+            title: "System Audio May Work",
+            description: "We couldn't fully test system audio, but you can still try it.",
+            variant: "default",
+          });
+          
+          return true;
+        }
+      }
+    } catch (err) {
+      console.warn("System audio capture test failed:", err);
+      toast({
+        title: "Audio Support Uncertain",
+        description: "We couldn't verify system audio support, but you can still try it.",
+        variant: "default",
+      });
+      return false;
+    }
+    
+    return false;
+  };
 
   // Fetch available audio devices when component mounts
   useEffect(() => {
@@ -188,6 +198,7 @@ export const useAudioDevices = () => {
     setAudioSource,
     availableDevices,
     deviceError,
-    isSystemAudioSupported
+    isSystemAudioSupported,
+    testSystemAudio
   };
 };

@@ -111,12 +111,30 @@ export const useCallRecording = () => {
       await changeAudioSource(source);
     }
     
-    await startRecording();
+    const needsScreenSharing = source === 'system' || 
+                              source === 'meeting' || 
+                              source === 'multimedia' || 
+                              source === 'voip' ||
+                              (!source && (audioSource === 'system' || 
+                                          audioSource === 'meeting' || 
+                                          audioSource === 'multimedia' || 
+                                          audioSource === 'voip'));
     
-    toast({
-      title: "Call Started",
-      description: `Using ${source || audioSource} as audio source`,
-    });
+    if (needsScreenSharing) {
+      toast({
+        title: "Screen Sharing Required",
+        description: "Please select a window and check 'Share audio' in the dialog.",
+        duration: 5000,
+      });
+    } else {
+      toast({
+        title: "Call Started",
+        description: `Using ${source || audioSource} for audio capture`,
+        duration: 3000,
+      });
+    }
+    
+    await startRecording();
   }, [startRecording, changeAudioSource, audioSource, toast]);
 
   const endCall = useCallback(async () => {

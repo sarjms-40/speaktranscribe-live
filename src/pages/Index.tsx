@@ -1,4 +1,3 @@
-
 import React, { useState } from "react";
 import TranscriptionDisplay from "@/components/TranscriptionDisplay";
 import RecordButton from "@/components/RecordButton";
@@ -10,12 +9,15 @@ import { Headset, Volume2, Save, Clock, Info, Shield, Boxes, ExternalLink } from
 import { format } from "date-fns";
 import { AudioSource, checkPotentialSystemAudioSupport } from "@/utils/systemAudioCapture";
 import { useToast } from "@/components/ui/use-toast";
+import { useAudioDevices } from "@/hooks/useAudioDevices";
 
 const Index = () => {
   const { toast } = useToast();
   const [showRecords, setShowRecords] = useState(false);
   const [showFloatingWindow, setShowFloatingWindow] = useState(false);
   const [showSystemInfo, setShowSystemInfo] = useState(false);
+  
+  const { testSystemAudio } = useAudioDevices();
   
   const { 
     transcript, 
@@ -44,8 +46,21 @@ const Index = () => {
   const handleSourceChange = (source: AudioSource) => {
     if (!isRecording) {
       changeAudioSource(source);
+      
+      if (source === 'system' || source === 'meeting' || source === 'multimedia' || source === 'voip') {
+        toast({
+          title: `${source.charAt(0).toUpperCase() + source.slice(1)} Audio Selected`,
+          description: "You'll need to share your screen when recording starts.",
+          duration: 4000,
+        });
+      } else {
+        toast({
+          title: `${source.charAt(0).toUpperCase() + source.slice(1)} Selected`,
+          description: "No screen sharing needed for this audio source.",
+          duration: 3000,
+        });
+      }
     } else {
-      // If already recording, stop and restart with new source
       endCall();
       setTimeout(() => {
         startCall(source);
@@ -122,6 +137,7 @@ const Index = () => {
                 availableDevices={availableDevices}
                 disabled={isRecording}
                 isSystemAudioSupported={isSystemAudioSupported}
+                onTestSystemAudio={testSystemAudio}
               />
             </div>
             
@@ -266,7 +282,6 @@ const Index = () => {
         </div>
       )}
       
-      {/* Floating transcription window */}
       {showFloatingWindow && (
         <FloatingTranscription
           transcript={transcript}

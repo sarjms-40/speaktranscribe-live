@@ -1,6 +1,6 @@
 
 import React from "react";
-import { Headphones, Mic, Volume2, Video, ExternalLink, Laptop, Youtube } from "lucide-react";
+import { Headphones, Mic, Volume2, Video, ExternalLink, Youtube } from "lucide-react";
 import { AudioSource } from "@/utils/systemAudioCapture";
 
 interface AudioSourceSelectorProps {
@@ -12,6 +12,7 @@ interface AudioSourceSelectorProps {
   };
   disabled?: boolean;
   isSystemAudioSupported?: boolean;
+  onTestSystemAudio?: () => Promise<boolean>;
 }
 
 const AudioSourceSelector: React.FC<AudioSourceSelectorProps> = ({
@@ -19,14 +20,31 @@ const AudioSourceSelector: React.FC<AudioSourceSelectorProps> = ({
   onChange,
   availableDevices,
   disabled = false,
-  isSystemAudioSupported = false
+  isSystemAudioSupported = false,
+  onTestSystemAudio
 }) => {
   // Always enable system audio options for better UX - we'll show a warning instead of disabling
   const forceEnable = true;
+  
+  // Helper to check if this source requires screen sharing
+  const requiresScreenSharing = (source: AudioSource): boolean => {
+    return source === 'system' || source === 'meeting' || source === 'multimedia' || source === 'voip';
+  };
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="text-sm font-medium mb-1">Audio Source</div>
+      <div className="text-sm font-medium mb-1 flex justify-between items-center">
+        <span>Audio Source</span>
+        {onTestSystemAudio && (
+          <button 
+            onClick={() => onTestSystemAudio()}
+            className="text-xs px-2 py-1 bg-secondary rounded-md hover:bg-secondary/80"
+          >
+            Test System Audio
+          </button>
+        )}
+      </div>
+      
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
@@ -117,7 +135,7 @@ const AudioSourceSelector: React.FC<AudioSourceSelectorProps> = ({
         </button>
       </div>
       
-      {(currentSource === 'system' || currentSource === 'meeting' || currentSource === 'multimedia' || currentSource === 'voip') && (
+      {requiresScreenSharing(currentSource) && (
         <div className="text-xs bg-amber-500/10 p-3 rounded border border-amber-500/20 mt-1 flex flex-col gap-1 animate-pulse">
           <span className="flex items-center gap-1 font-semibold text-amber-700 dark:text-amber-400">
             ⚠️ IMPORTANT: You MUST check "Share audio" checkbox!
@@ -133,10 +151,24 @@ const AudioSourceSelector: React.FC<AudioSourceSelectorProps> = ({
         </div>
       )}
 
+      {currentSource === 'microphone' && (
+        <div className="text-xs bg-blue-500/10 p-2 rounded border border-blue-500/20 mt-1 flex items-center gap-1">
+          <span>ℹ️</span>
+          <span>The <strong>Microphone</strong> option uses your device's built-in or external microphone. <strong>No screen sharing required</strong>.</span>
+        </div>
+      )}
+
+      {currentSource === 'headphones' && (
+        <div className="text-xs bg-blue-500/10 p-2 rounded border border-blue-500/20 mt-1 flex items-center gap-1">
+          <span>ℹ️</span>
+          <span>The <strong>Headphones</strong> option uses the microphone in your headset. <strong>No screen sharing required</strong>.</span>
+        </div>
+      )}
+
       {currentSource === 'system' && (
         <div className="text-xs bg-amber-500/10 p-2 rounded border border-amber-500/20 mt-1 flex items-center gap-1">
           <span>ℹ️</span>
-          <span>Choose this option to capture <strong>all system sounds</strong> including application audio, alerts, etc.</span>
+          <span>Choose this option to capture <strong>all system sounds</strong> including application audio, alerts, etc. <strong>Requires screen sharing with "Share audio" enabled</strong>.</span>
         </div>
       )}
 
@@ -173,31 +205,33 @@ const AudioSourceSelector: React.FC<AudioSourceSelectorProps> = ({
         </div>
       )}
       
-      {(!isSystemAudioSupported && forceEnable) && (
+      {(!isSystemAudioSupported && forceEnable && requiresScreenSharing(currentSource)) && (
         <div className="text-xs text-amber-600 mt-1 p-2 bg-amber-50 dark:bg-amber-950/30 rounded">
           <p className="font-medium">⚠️ Limited Browser Support:</p>
           <p>System audio capture works best in Chrome and Edge. You can try it in this browser, but results may vary.</p>
         </div>
       )}
       
-      {availableDevices.headphones.length === 0 && (
+      {availableDevices.headphones.length === 0 && currentSource === 'headphones' && (
         <div className="text-xs text-muted-foreground mt-1">
           No headphones detected. Please connect headphones for better call quality.
         </div>
       )}
       
-      <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/20 rounded-md text-blue-700 dark:text-blue-300 text-xs">
-        <p className="font-medium mb-1">📢 How to use system/meeting audio:</p>
-        <ol className="list-decimal ml-5 space-y-1">
-          <li>Select the appropriate audio source above</li>
-          <li>Click the "Start Recording" button below</li>
-          <li>When the browser asks to share your screen:</li>
-          <li className="font-semibold underline">Check the "Share system audio" or "Share audio" checkbox</li>
-          <li>Then click the Share button</li>
-          <li>The transcription will appear as audio is captured</li>
-        </ol>
-        <p className="mt-2">For full system audio capture with no limitations, try our desktop application.</p>
-      </div>
+      {requiresScreenSharing(currentSource) && (
+        <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/20 rounded-md text-blue-700 dark:text-blue-300 text-xs">
+          <p className="font-medium mb-1">📢 How to use system/meeting audio:</p>
+          <ol className="list-decimal ml-5 space-y-1">
+            <li>Select the appropriate audio source above</li>
+            <li>Click the "Start Recording" button below</li>
+            <li>When the browser asks to share your screen:</li>
+            <li className="font-semibold underline">Check the "Share system audio" or "Share audio" checkbox</li>
+            <li>Then click the Share button</li>
+            <li>The transcription will appear as audio is captured</li>
+          </ol>
+          <p className="mt-2">For full system audio capture with no limitations, try our desktop application.</p>
+        </div>
+      )}
     </div>
   );
 };

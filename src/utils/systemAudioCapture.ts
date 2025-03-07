@@ -1,3 +1,4 @@
+
 /**
  * System Audio Capture Utility
  * 
@@ -76,7 +77,33 @@ export const getAudioStream = async (
       ...options
     };
     
-    // For system audio sources, try the enhanced capture approach first
+    // Only use getDisplayMedia for system audio sources
+    // For microphone and headphones, use getUserMedia directly
+    if (source === 'microphone' || source === 'headphones') {
+      console.log(`Capturing ${source} audio using getUserMedia directly...`);
+      
+      const constraints: MediaStreamConstraints = {
+        audio: {
+          ...mergedOptions,
+          // For headphones, we want to ensure we're getting audio input
+          // from a headset if available
+          ...(source === 'headphones' && {
+            deviceId: await getHeadphonesDeviceId(),
+          }),
+        },
+        video: false,
+      };
+      
+      console.log('getUserMedia constraints:', JSON.stringify(constraints, null, 2));
+      
+      // Request user media with the appropriate constraints
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      console.log(`${source} audio stream obtained successfully`);
+      
+      return stream;
+    }
+    
+    // For system audio sources, try the enhanced capture approach with getDisplayMedia
     if (source === 'system' || source === 'meeting' || source === 'multimedia' || source === 'voip') {
       console.log(`Attempting to capture ${source} audio with enhanced method...`);
       try {
@@ -174,32 +201,25 @@ export const getAudioStream = async (
         console.warn(`Enhanced ${source} audio capture failed:`, err);
         console.log('Will try fallback method...');
       }
+      
+      // Fallback method for system audio using getUserMedia
+      console.log(`Attempting fallback method for ${source} audio...`);
+      
+      // Create a simple audio-only stream as fallback
+      const constraints: MediaStreamConstraints = {
+        audio: mergedOptions,
+        video: false,
+      };
+      
+      console.log('Fallback getUserMedia constraints:', JSON.stringify(constraints, null, 2));
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      console.log(`Fallback method for ${source} succeeded, but may not capture system audio`);
+      
+      return stream;
     }
     
-    // If we're here, either it's a microphone/headphones capture or the system audio capture failed
-    // Fallback to getUserMedia for microphone audio
-    console.log(`Attempting to capture audio using getUserMedia for ${source}...`);
-    
-    // Different constraints based on audio source
-    const constraints: MediaStreamConstraints = {
-      audio: {
-        ...mergedOptions,
-        // For headphones, we want to ensure we're getting audio input
-        // from a headset if available
-        ...(source === 'headphones' && {
-          deviceId: await getHeadphonesDeviceId(),
-        }),
-      },
-      video: false,
-    };
-
-    console.log('getUserMedia constraints:', JSON.stringify(constraints, null, 2));
-    
-    // Request user media with the appropriate constraints
-    const stream = await navigator.mediaDevices.getUserMedia(constraints);
-    console.log('getUserMedia succeeded, obtained audio stream');
-    
-    return stream;
+    // This should never happen, but TypeScript needs a return
+    throw new Error(`Unsupported audio source: ${source}`);
   } catch (err) {
     console.error("Error getting audio stream:", err);
     return null;
