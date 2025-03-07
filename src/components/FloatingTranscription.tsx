@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import { Speaker, TranscriptionSegment } from "@/types/speechRecognition";
 import SpeakerSegment from "./SpeakerSegment";
@@ -33,8 +32,9 @@ const FloatingTranscription: React.FC<FloatingTranscriptionProps> = ({
   const [minimized, setMinimized] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<HTMLDivElement>(null);
+  const [lastActivity, setLastActivity] = useState<number>(Date.now());
+  const [isActive, setIsActive] = useState<boolean>(false);
 
-  // Handle drag start
   const handleMouseDown = (e: React.MouseEvent) => {
     if (dragRef.current && dragRef.current.contains(e.target as Node)) {
       setIsDragging(true);
@@ -46,7 +46,6 @@ const FloatingTranscription: React.FC<FloatingTranscriptionProps> = ({
     }
   };
 
-  // Handle dragging
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (isDragging) {
@@ -72,7 +71,15 @@ const FloatingTranscription: React.FC<FloatingTranscriptionProps> = ({
     };
   }, [isDragging, dragOffset]);
 
-  // Auto-scroll to bottom when transcript updates
+  useEffect(() => {
+    if (interimText) {
+      setLastActivity(Date.now());
+      setIsActive(true);
+      const timeout = setTimeout(() => setIsActive(false), 2000);
+      return () => clearTimeout(timeout);
+    }
+  }, [interimText]);
+
   useEffect(() => {
     if (containerRef.current && !minimized) {
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
@@ -94,7 +101,6 @@ const FloatingTranscription: React.FC<FloatingTranscriptionProps> = ({
       }}
       onMouseDown={handleMouseDown}
     >
-      {/* Header/Title bar */}
       <div 
         ref={dragRef}
         className="bg-black/80 text-white h-12 px-3 flex items-center justify-between"
@@ -103,7 +109,7 @@ const FloatingTranscription: React.FC<FloatingTranscriptionProps> = ({
           <Move size={14} className="text-muted-foreground" />
           <span className="text-sm font-medium">Real-Time Transcription</span>
           {isRecording && (
-            <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse"></div>
+            <div className={`h-2 w-2 rounded-full ${isActive ? 'bg-green-500 scale-125' : 'bg-red-500'} animate-pulse transition-all duration-300`}></div>
           )}
         </div>
         
@@ -160,7 +166,6 @@ const FloatingTranscription: React.FC<FloatingTranscriptionProps> = ({
         </div>
       </div>
       
-      {/* Transcription content */}
       {!minimized && (
         <div 
           ref={containerRef}
@@ -169,7 +174,6 @@ const FloatingTranscription: React.FC<FloatingTranscriptionProps> = ({
         >
           {transcript || segments.length > 0 ? (
             <div>
-              {/* Speaker segmented view */}
               {segments.length > 0 && (
                 <div className="space-y-2">
                   {segments.map((segment, index) => (
@@ -180,10 +184,8 @@ const FloatingTranscription: React.FC<FloatingTranscriptionProps> = ({
                     />
                   ))}
                   
-                  {/* Show interim results if available */}
                   {interimText && (
                     <SpeakerSegment 
-                      // Use the last speaker for interim text
                       speaker={segments.length > 0 ? segments[segments.length - 1].speaker : undefined}
                       text={interimText}
                       isInterim={true}
@@ -192,7 +194,6 @@ const FloatingTranscription: React.FC<FloatingTranscriptionProps> = ({
                 </div>
               )}
               
-              {/* Raw transcript view (used when no segments are available) */}
               {segments.length === 0 && (
                 <p className="whitespace-pre-wrap break-words">
                   {transcript}
@@ -208,12 +209,20 @@ const FloatingTranscription: React.FC<FloatingTranscriptionProps> = ({
           ) : (
             <div className="h-24 flex items-center justify-center text-muted-foreground italic">
               {isRecording 
-                ? "Listening..." 
+                ? "Listening... (Speech will appear here)" 
                 : "Start recording to begin real-time transcription"}
             </div>
           )}
           
-          {/* Opacity slider */}
+          {isRecording && (
+            <div className="mt-4 text-xs border border-green-500/20 bg-green-500/10 rounded p-2">
+              <p className="flex items-center justify-center gap-1 text-green-400">
+                <span className={`inline-block h-2 w-2 rounded-full ${isActive ? 'bg-green-500 scale-125' : 'bg-red-500'} animate-pulse`}></span>
+                Actively recording - will continue until you press stop
+              </p>
+            </div>
+          )}
+          
           <div className="mt-4 pt-3 border-t border-white/10">
             <div className="flex items-center justify-between">
               <span className="text-xs text-muted-foreground">Opacity:</span>

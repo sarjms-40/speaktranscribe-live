@@ -1,4 +1,3 @@
-
 /**
  * System Audio Capture Utility
  * 
@@ -400,43 +399,64 @@ export class DuplicateSpeechDetector {
  * VAD (Voice Activity Detection) - detect voice vs. silence
  */
 export class SilenceDetector {
-  private readonly threshold: number;
-  private readonly silenceDuration: number;
-  private lastSound: number = Date.now();
-  
-  constructor(threshold = 0.01, silenceDuration = 1000) {
-    this.threshold = threshold; // Volume level considered silence
-    this.silenceDuration = silenceDuration; // Duration of silence in ms
+  private silenceThreshold: number = -50;  // dB threshold for silence
+  private minSilenceDuration: number = 1000;  // ms of silence required
+  private silenceStart: number | null = null;
+  private isCurrentlySilent: boolean = false;
+
+  constructor(options?: { silenceThreshold?: number; minSilenceDuration?: number }) {
+    if (options) {
+      this.configure(options);
+    }
   }
-  
-  /**
-   * Analyzes audio data to detect silence
-   * @param audioData - Float32Array of audio samples
-   * @returns true if silence is detected for the configured duration
-   */
-  public isSilent(audioData: Float32Array): boolean {
-    // Calculate RMS (root mean square) volume
+
+  configure(options: { silenceThreshold?: number; minSilenceDuration?: number }) {
+    if (options.silenceThreshold !== undefined) {
+      this.silenceThreshold = options.silenceThreshold;
+    }
+    if (options.minSilenceDuration !== undefined) {
+      this.minSilenceDuration = options.minSilenceDuration;
+    }
+  }
+
+  reset() {
+    this.silenceStart = null;
+    this.isCurrentlySilent = false;
+  }
+
+  isSilent(audioData: Float32Array): boolean {
+    const rms = this.calculateRMS(audioData);
+    const db = this.rmsToDb(rms);
+    
+    const now = Date.now();
+    
+    // If below threshold, potentially silent
+    if (db < this.silenceThreshold) {
+      if (!this.silenceStart) {
+        this.silenceStart = now;
+      } else if (now - this.silenceStart > this.minSilenceDuration) {
+        this.isCurrentlySilent = true;
+        return true;
+      }
+    } else {
+      // If above threshold, reset silence detection
+      this.silenceStart = null;
+      this.isCurrentlySilent = false;
+    }
+    
+    return this.isCurrentlySilent;
+  }
+
+  private calculateRMS(buffer: Float32Array): number {
     let sum = 0;
-    for (let i = 0; i < audioData.length; i++) {
-      sum += audioData[i] * audioData[i];
+    for (let i = 0; i < buffer.length; i++) {
+      sum += buffer[i] * buffer[i];
     }
-    const rms = Math.sqrt(sum / audioData.length);
-    
-    // If volume is above threshold, update last sound time
-    if (rms > this.threshold) {
-      this.lastSound = Date.now();
-      return false;
-    }
-    
-    // Check if silence duration exceeds threshold
-    return (Date.now() - this.lastSound) > this.silenceDuration;
+    return Math.sqrt(sum / buffer.length);
   }
-  
-  /**
-   * Reset the silence detector
-   */
-  public reset(): void {
-    this.lastSound = Date.now();
+
+  private rmsToDb(rms: number): number {
+    return 20 * Math.log10(rms);
   }
 }
 
