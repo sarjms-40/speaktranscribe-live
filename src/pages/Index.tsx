@@ -4,13 +4,18 @@ import TranscriptionDisplay from "@/components/TranscriptionDisplay";
 import RecordButton from "@/components/RecordButton";
 import CallRecordsList from "@/components/CallRecordsList";
 import AudioSourceSelector from "@/components/AudioSourceSelector";
+import FloatingTranscription from "@/components/FloatingTranscription";
 import { useCallRecording } from "@/hooks/useCallRecording";
-import { Headset, Volume2, Save, Clock, Info, Shield } from "lucide-react";
+import { Headset, Volume2, Save, Clock, Info, Shield, Boxes, ExternalLink } from "lucide-react";
 import { format } from "date-fns";
-import { AudioSource } from "@/utils/systemAudioCapture";
+import { AudioSource, checkPotentialSystemAudioSupport } from "@/utils/systemAudioCapture";
+import { useToast } from "@/components/ui/use-toast";
 
 const Index = () => {
+  const { toast } = useToast();
   const [showRecords, setShowRecords] = useState(false);
+  const [showFloatingWindow, setShowFloatingWindow] = useState(false);
+  const [showSystemInfo, setShowSystemInfo] = useState(false);
   
   const { 
     transcript, 
@@ -47,6 +52,32 @@ const Index = () => {
       }, 500);
     }
   };
+  
+  const handleFloatingWindowToggle = () => {
+    setShowFloatingWindow(!showFloatingWindow);
+    
+    if (!showFloatingWindow) {
+      toast({
+        title: "Floating Window Enabled",
+        description: "Drag the window to position it on your screen",
+      });
+    }
+  };
+  
+  const handleShowSystemInfo = () => {
+    const systemInfo = checkPotentialSystemAudioSupport();
+    setShowSystemInfo(!showSystemInfo);
+    
+    if (!showSystemInfo) {
+      toast({
+        title: `System Audio ${systemInfo.isSupported ? 'Supported' : 'Limited Support'}`,
+        description: systemInfo.isSupported 
+          ? "Your browser supports system audio capture" 
+          : "Your browser has limited system audio support",
+        variant: systemInfo.isSupported ? "default" : "destructive",
+      });
+    }
+  };
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center py-8 px-4 sm:px-6 lg:px-8 bg-gradient-to-b from-background to-secondary/50">
@@ -67,7 +98,7 @@ const Index = () => {
         </header>
 
         <main className="flex flex-col gap-6">
-          <div className="glass-panel p-6 shadow-sm">
+          <div className="glass-panel p-6 shadow-sm bg-background/80 backdrop-blur-sm border border-border rounded-lg">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
               <h2 className="text-xl font-medium flex items-center">
                 <Volume2 className="h-5 w-5 mr-2" />
@@ -75,7 +106,7 @@ const Index = () => {
               </h2>
               {isRecording && callStartTime && (
                 <div className="flex items-center gap-2">
-                  <div className="recording-dot animate-pulse-recording"></div>
+                  <div className="h-2 w-2 bg-red-500 rounded-full animate-pulse"></div>
                   <span className="text-sm text-muted-foreground">
                     <Clock className="h-3 w-3 inline mr-1" />
                     Started at {format(callStartTime, 'h:mm:ss a')}
@@ -108,21 +139,81 @@ const Index = () => {
               </div>
             )}
             
-            <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/20 rounded-md text-blue-500 text-sm flex items-start gap-2">
-              <Info className="h-4 w-4 mt-0.5 flex-shrink-0" />
-              <div>
-                <p className="font-medium">System & Meeting Audio Support</p>
-                <p className="mt-1 text-xs">
-                  This application can capture audio from various sources:
-                </p>
-                <ul className="list-disc pl-5 mt-1 text-xs">
-                  <li>Microphone: Standard audio input</li>
-                  <li>Headphones: Audio from connected headsets</li>
-                  <li>System Audio: Sound playing through your device (requires screen sharing)</li>
-                  <li>Meeting Audio: Share a meeting window to capture online calls (Zoom, Teams, etc.)</li>
-                </ul>
-              </div>
+            <div className="mt-4 flex flex-wrap gap-3">
+              <button
+                onClick={handleFloatingWindowToggle}
+                className="flex items-center gap-2 px-4 py-2 bg-secondary/80 hover:bg-secondary text-secondary-foreground rounded-md text-sm"
+              >
+                <Boxes size={16} />
+                {showFloatingWindow ? "Hide Floating Window" : "Show Floating Window"}
+              </button>
+              
+              <button
+                onClick={handleShowSystemInfo}
+                className="flex items-center gap-2 px-4 py-2 bg-secondary/80 hover:bg-secondary text-secondary-foreground rounded-md text-sm"
+              >
+                <Info size={16} />
+                System Info
+              </button>
+              
+              <a 
+                href="https://github.com/lovable-devs/desktop" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 px-4 py-2 bg-secondary/80 hover:bg-secondary text-secondary-foreground rounded-md text-sm"
+              >
+                <ExternalLink size={16} />
+                Full Desktop Version
+              </a>
             </div>
+            
+            {showSystemInfo && (
+              <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/20 rounded-md text-sm">
+                <h3 className="font-medium mb-2 flex items-center gap-2">
+                  <Info size={16} className="text-blue-500" />
+                  System Audio Support
+                </h3>
+                
+                {(() => {
+                  const systemInfo = checkPotentialSystemAudioSupport();
+                  return (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className={`h-3 w-3 rounded-full ${systemInfo.isSupported ? 'bg-green-500' : 'bg-yellow-500'}`}></span>
+                        <span>{systemInfo.isSupported ? 'System audio supported' : 'Limited system audio support'}</span>
+                      </div>
+                      
+                      {systemInfo.capabilities.length > 0 && (
+                        <div className="text-xs">
+                          <div className="font-medium text-green-600 dark:text-green-400">Capabilities:</div>
+                          <ul className="list-disc pl-5 mt-1 space-y-1">
+                            {systemInfo.capabilities.map((cap, i) => (
+                              <li key={i}>{cap}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      
+                      {systemInfo.limitations.length > 0 && (
+                        <div className="text-xs">
+                          <div className="font-medium text-amber-600 dark:text-amber-400">Limitations:</div>
+                          <ul className="list-disc pl-5 mt-1 space-y-1">
+                            {systemInfo.limitations.map((limit, i) => (
+                              <li key={i}>{limit}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      
+                      <div className="text-xs mt-2 pt-2 border-t border-border/30">
+                        <p className="font-medium">Full System Audio Support:</p>
+                        <p>For complete system audio loopback with WASAPI (Windows), CoreAudio (Mac), or ALSA (Linux), a desktop application is needed. Browser APIs have limitations due to security restrictions.</p>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
           </div>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -173,6 +264,20 @@ const Index = () => {
           <div className="h-2 w-2 bg-current rounded-full animate-pulse"></div>
           Saving record...
         </div>
+      )}
+      
+      {/* Floating transcription window */}
+      {showFloatingWindow && (
+        <FloatingTranscription
+          transcript={transcript}
+          isRecording={isRecording}
+          speakers={speakers}
+          segments={segments}
+          interimText={interimText}
+          onStartRecording={handleStartCall}
+          onStopRecording={endCall}
+          onClose={() => setShowFloatingWindow(false)}
+        />
       )}
     </div>
   );

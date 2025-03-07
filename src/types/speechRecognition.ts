@@ -56,3 +56,20 @@ export interface EnhancedTranscription {
   segments: TranscriptionSegment[];
   fullText: string;
 }
+
+// UI configuration for floating window
+export interface FloatingWindowConfig {
+  alwaysOnTop: boolean;
+  opacity: number;
+  fontSize: string;
+  darkMode: boolean;
+  width: number;
+  height: number;
+}
+
+// Desktop integration options (for future Electron/Tauri implementation)
+export interface DesktopIntegrationOptions {
+  startOnBoot: boolean;
+  minimizeToTray: boolean;
+  globalHotkey: string;
+}

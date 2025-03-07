@@ -66,12 +66,18 @@ export const getSpeechErrorMessage = (errorCode: string): string => {
 /**
  * Check if browser supports system audio capture
  */
-export const checkSystemAudioSupport = async (): Promise<boolean> => {
+export const checkSystemAudioSupport = async (): Promise<{
+  isSupported: boolean;
+  details: string;
+}> => {
   try {
     // Check if getDisplayMedia is available
     // @ts-ignore - TypeScript doesn't know about this experimental API
     if (!navigator.mediaDevices.getDisplayMedia) {
-      return false;
+      return {
+        isSupported: false,
+        details: "getDisplayMedia API not available"
+      };
     }
     
     // Some browsers support getDisplayMedia but not system audio capture
@@ -88,18 +94,48 @@ export const checkSystemAudioSupport = async (): Promise<boolean> => {
       const stream = await navigator.mediaDevices.getDisplayMedia(constraints);
       const hasAudioTracks = stream.getAudioTracks().length > 0;
       
+      // Get info about the tracks
+      const trackInfo = stream.getAudioTracks().map(track => {
+        const settings = track.getSettings();
+        return {
+          label: track.label,
+          settings: {
+            channelCount: settings.channelCount,
+            sampleRate: settings.sampleRate,
+            latency: settings.latency,
+          }
+        };
+      });
+      
       // Clean up
       stream.getTracks().forEach(track => track.stop());
       
-      return hasAudioTracks;
+      return {
+        isSupported: hasAudioTracks,
+        details: hasAudioTracks 
+          ? `System audio supported with ${trackInfo.length} tracks. Details: ${JSON.stringify(trackInfo)}`
+          : "No audio tracks found despite API support"
+      };
     } catch (err) {
       // If we get a security or permission error, it might still be supported
       const errMsg = err instanceof Error ? err.message : String(err);
-      return errMsg.includes("security") || errMsg.includes("permission");
+      const isPotentiallySupported = errMsg.includes("security") || errMsg.includes("permission");
+      
+      return {
+        isSupported: isPotentiallySupported,
+        details: `Error testing: ${errMsg}. ${
+          isPotentiallySupported 
+            ? "May be supported with permission" 
+            : "Likely not supported"
+        }`
+      };
     }
   } catch (err) {
     console.warn("System audio capture not supported:", err);
-    return false;
+    return {
+      isSupported: false,
+      details: `Error: ${err instanceof Error ? err.message : String(err)}`
+    };
   }
 };
 
@@ -130,4 +166,82 @@ export const getAvailableSpeechLanguages = (): { code: string; name: string }[] 
  */
 export const generateSpeakerId = (): string => {
   return `speaker-${Math.floor(Math.random() * 1000)}`;
+};
+
+/**
+ * Detect the environment we're running in
+ * This helps adapt functionality based on the execution context
+ */
+export const detectEnvironment = (): {
+  isDesktopApp: boolean;
+  isBrowser: boolean;
+  browserInfo: {
+    name: string;
+    version: string;
+    isChrome: boolean;
+    isFirefox: boolean;
+    isSafari: boolean;
+    isEdge: boolean;
+  };
+  systemCapabilities: {
+    hasDisplayMedia: boolean;
+    hasAudioWorklet: boolean;
+    hasSecureContext: boolean;
+  };
+} => {
+  // Check for desktop app environment
+  // @ts-ignore - TypeScript doesn't know about these possible APIs
+  const isElectron = !!(window.process && window.process.type);
+  // @ts-ignore
+  const isTauri = !!window.__TAURI__;
+  const isDesktopApp = isElectron || isTauri;
+  
+  // Browser detection
+  const userAgent = navigator.userAgent.toLowerCase();
+  const isChrome = userAgent.includes('chrome') && !userAgent.includes('edg');
+  const isFirefox = userAgent.includes('firefox');
+  const isSafari = userAgent.includes('safari') && !userAgent.includes('chrome');
+  const isEdge = userAgent.includes('edg');
+  
+  // Get browser version
+  let browserName = "unknown";
+  let browserVersion = "unknown";
+  
+  if (isChrome) {
+    browserName = "Chrome";
+    browserVersion = (userAgent.match(/chrome\/([0-9.]+)/) || ['', ''])[1];
+  } else if (isFirefox) {
+    browserName = "Firefox";
+    browserVersion = (userAgent.match(/firefox\/([0-9.]+)/) || ['', ''])[1];
+  } else if (isSafari) {
+    browserName = "Safari";
+    browserVersion = (userAgent.match(/version\/([0-9.]+)/) || ['', ''])[1];
+  } else if (isEdge) {
+    browserName = "Edge";
+    browserVersion = (userAgent.match(/edg\/([0-9.]+)/) || ['', ''])[1];
+  }
+  
+  // System capabilities detection
+  // @ts-ignore - TypeScript doesn't know about some of these APIs
+  const hasDisplayMedia = !!navigator.mediaDevices.getDisplayMedia;
+  const hasAudioWorklet = !!(window.AudioContext && AudioContext.prototype.audioWorklet);
+  const hasSecureContext = window.isSecureContext;
+  
+  return {
+    isDesktopApp,
+    isBrowser: !isDesktopApp,
+    browserInfo: {
+      name: browserName,
+      version: browserVersion,
+      isChrome,
+      isFirefox,
+      isSafari,
+      isEdge
+    },
+    systemCapabilities: {
+      hasDisplayMedia,
+      hasAudioWorklet,
+      hasSecureContext
+    }
+  };
 };

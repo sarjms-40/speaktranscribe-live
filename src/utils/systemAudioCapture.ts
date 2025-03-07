@@ -1,4 +1,3 @@
-
 /**
  * System Audio Capture Utility
  * 
@@ -6,8 +5,8 @@
  * and system audio (loopback) for capturing online meeting audio.
  */
 
-// Types for our audio sources
-export type AudioSource = 'microphone' | 'system' | 'headphones' | 'meeting';
+// Types for our audio sources - expanded for more specific sources
+export type AudioSource = 'microphone' | 'system' | 'headphones' | 'meeting' | 'multimedia' | 'voip';
 
 // Interface for audio capture options
 export interface AudioCaptureOptions {
@@ -27,6 +26,40 @@ const DEFAULT_OPTIONS: AudioCaptureOptions = {
   channelCount: 1, // Mono is better for speech recognition
 };
 
+// Options optimized for different source types
+const SOURCE_SPECIFIC_OPTIONS: Record<AudioSource, Partial<AudioCaptureOptions>> = {
+  'microphone': {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+  },
+  'headphones': {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+  },
+  'system': {
+    echoCancellation: false,
+    noiseSuppression: false,
+    autoGainControl: false,
+  },
+  'meeting': {
+    echoCancellation: false,
+    noiseSuppression: true,
+    autoGainControl: true,
+  },
+  'multimedia': {
+    echoCancellation: false,
+    noiseSuppression: false,
+    autoGainControl: false,
+  },
+  'voip': {
+    echoCancellation: false,
+    noiseSuppression: true,
+    autoGainControl: true,
+  }
+};
+
 /**
  * Attempts to get audio from the specified source
  * Note: System audio capture is limited by browser security
@@ -36,10 +69,17 @@ export const getAudioStream = async (
   options: AudioCaptureOptions = DEFAULT_OPTIONS
 ): Promise<MediaStream | null> => {
   try {
+    // Merge default options with source-specific options and user options
+    const mergedOptions = {
+      ...DEFAULT_OPTIONS,
+      ...SOURCE_SPECIFIC_OPTIONS[source],
+      ...options
+    };
+    
     // Different constraints based on audio source
     const constraints: MediaStreamConstraints = {
       audio: {
-        ...options,
+        ...mergedOptions,
         // For headphones, we want to ensure we're getting audio input
         // from a headset if available
         ...(source === 'headphones' && {
@@ -52,29 +92,41 @@ export const getAudioStream = async (
     // Request user media with the appropriate constraints
     const stream = await navigator.mediaDevices.getUserMedia(constraints);
     
-    // Special handling for system audio and meeting audio
-    if (source === 'system' || source === 'meeting') {
+    // Special handling for system audio, meeting audio, multimedia, and VoIP
+    if (source === 'system' || source === 'meeting' || source === 'multimedia' || source === 'voip') {
       try {
         // This uses the getDisplayMedia API which can capture system audio
         // on supported browsers and platforms
         const displayMediaOptions: any = {
-          video: source === 'meeting' ? true : false, // Only include video for meeting capture
+          video: source !== 'system', // Only include video for meeting/multimedia/voip capture
           audio: {
             // These are specific options for system audio capture
-            echoCancellation: false, // Don't cancel echo for system audio
-            noiseSuppression: options.noiseSuppression,
-            autoGainControl: options.autoGainControl,
+            echoCancellation: mergedOptions.echoCancellation,
+            noiseSuppression: mergedOptions.noiseSuppression,
+            autoGainControl: mergedOptions.autoGainControl,
             latency: 0.01, // Request lowest possible latency
-            sampleRate: options.sampleRate || 16000,
-            channelCount: options.channelCount || 1,
+            sampleRate: mergedOptions.sampleRate || 16000,
+            channelCount: mergedOptions.channelCount || 1,
           },
           // Request system audio
-          systemAudio: source === 'system' ? 'include' : 'exclude',
-          // For meeting we want the application window, for system audio just audio
-          displaySurface: source === 'meeting' ? 'window' : 'browser',
+          systemAudio: 'include',
+          // For meeting/multimedia/voip we want the application window, for system audio just audio
+          displaySurface: source === 'system' ? 'browser' : 'window',
           selfBrowserSurface: 'exclude', // Don't capture this browser window
           suppressLocalAudioPlayback: false, // Don't mute the audio while capturing
         };
+        
+        // Specific display constraints for different sources
+        if (source === 'meeting') {
+          displayMediaOptions.preferCurrentTab = false;
+          displayMediaOptions.displaySurface = 'window';
+        } else if (source === 'multimedia') {
+          displayMediaOptions.preferCurrentTab = true;
+          displayMediaOptions.displaySurface = 'browser';
+        } else if (source === 'voip') {
+          displayMediaOptions.preferCurrentTab = false;
+          displayMediaOptions.displaySurface = 'window';
+        }
         
         // This is the call to get system audio
         // @ts-ignore - TypeScript doesn't know about some of these experimental API options
@@ -85,8 +137,15 @@ export const getAudioStream = async (
         
         if (audioTracks.length > 0) {
           console.log(`Captured ${audioTracks.length} audio tracks from ${source}`);
+          
           // Create a new stream with just the audio from screen capture
           const systemAudioStream = new MediaStream(audioTracks);
+          
+          // Add labels to the tracks for debugging
+          audioTracks.forEach(track => {
+            console.log(`Audio track: ${track.label}, settings:`, track.getSettings());
+          });
+          
           return systemAudioStream;
         } else {
           console.warn(`No ${source} audio track found, falling back to microphone`);
@@ -383,3 +442,89 @@ export class SpeakerDiarization {
     this.stabilityCounter = 0;
   }
 }
+
+/**
+ * Checks if the system supports desktop integration features
+ * This helps determine if we're running in a desktop environment
+ * like Electron where system audio loopback would be fully supported
+ */
+export const checkDesktopIntegration = (): boolean => {
+  try {
+    // Check for Electron-specific properties
+    // @ts-ignore - TypeScript doesn't know about Electron-specific APIs
+    const isElectron = window.process && window.process.type === 'renderer';
+    
+    // Check for Tauri-specific properties
+    // @ts-ignore - TypeScript doesn't know about Tauri-specific APIs
+    const isTauri = !!window.__TAURI__;
+    
+    return isElectron || isTauri;
+  } catch (err) {
+    return false;
+  }
+};
+
+/**
+ * Checks if the browser has potential support for system audio capture
+ */
+export const checkPotentialSystemAudioSupport = (): {
+  isSupported: boolean;
+  capabilities: string[];
+  limitations: string[];
+} => {
+  const capabilities: string[] = [];
+  const limitations: string[] = [];
+  
+  // Check if getDisplayMedia is supported (required for screen sharing & system audio)
+  // @ts-ignore - TypeScript doesn't know about some of these APIs
+  const hasDisplayMedia = !!navigator.mediaDevices.getDisplayMedia;
+  
+  if (hasDisplayMedia) {
+    capabilities.push("Screen sharing supported");
+  } else {
+    limitations.push("Screen sharing not supported (required for system audio)");
+  }
+  
+  // Check if current browser is known to support system audio
+  const userAgent = navigator.userAgent.toLowerCase();
+  const isChrome = userAgent.includes('chrome') && !userAgent.includes('edg');
+  const isEdge = userAgent.includes('edg');
+  const isSafari = userAgent.includes('safari') && !userAgent.includes('chrome');
+  const isFirefox = userAgent.includes('firefox');
+  
+  if (isChrome && parseInt(userAgent.match(/chrome\/([0-9]+)/)?.[1] || '0', 10) >= 74) {
+    capabilities.push("Chrome 74+ has system audio support");
+  }
+  
+  if (isEdge && parseInt(userAgent.match(/edg\/([0-9]+)/)?.[1] || '0', 10) >= 79) {
+    capabilities.push("Edge 79+ has system audio support");
+  }
+  
+  if (isSafari) {
+    limitations.push("Safari has limited system audio support");
+  }
+  
+  if (isFirefox) {
+    limitations.push("Firefox has limited system audio support");
+  }
+  
+  // Check for secure context (required for modern audio APIs)
+  if (window.isSecureContext) {
+    capabilities.push("Running in secure context");
+  } else {
+    limitations.push("Not running in secure context (required for audio APIs)");
+  }
+  
+  // Check for desktop integration
+  if (checkDesktopIntegration()) {
+    capabilities.push("Desktop integration detected (full system audio possible)");
+  } else {
+    limitations.push("No desktop integration (browser restrictions apply)");
+  }
+  
+  return {
+    isSupported: hasDisplayMedia && (isChrome || isEdge),
+    capabilities,
+    limitations
+  };
+};
