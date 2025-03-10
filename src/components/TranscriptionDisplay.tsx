@@ -20,15 +20,26 @@ const TranscriptionDisplay: React.FC<TranscriptionDisplayProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [words, setWords] = useState<string[]>([]);
+  const [paragraphs, setParagraphs] = useState<string[]>([]);
   
-  // Process transcript into words for real-time display
+  // Process transcript into words and paragraphs for better formatted display
   useEffect(() => {
     if (transcript) {
       // Split the transcript into words for animated display
       const newWords = transcript.split(/\s+/).filter(word => word.trim().length > 0);
       setWords(newWords);
+      
+      // Create paragraphs for better readability
+      // Split on sentences that end with period followed by space
+      const newParagraphs = transcript
+        .split(/\.(?:\s+)/)
+        .filter(para => para.trim().length > 0)
+        .map(para => para.trim() + (para.endsWith('.') ? '' : '.'));
+      
+      setParagraphs(newParagraphs);
     } else {
       setWords([]);
+      setParagraphs([]);
     }
   }, [transcript]);
 
@@ -38,25 +49,6 @@ const TranscriptionDisplay: React.FC<TranscriptionDisplayProps> = ({
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
     }
   }, [transcript, segments, interimText]);
-
-  // Animated appearance of words
-  const getWordStyle = (index: number) => {
-    // Add a slight delay to each word for a typing effect
-    const baseDelay = 0.05; // 50ms
-    return {
-      animationDelay: `${baseDelay * index}s`,
-    };
-  };
-
-  // Format paragraph breaks properly - this is crucial for readability
-  const formatParagraphs = (text: string) => {
-    return text.split(/\.\s+/).map((sentence, index, array) => (
-      <React.Fragment key={index}>
-        {sentence}{index < array.length - 1 ? '.' : ''}
-        {index < array.length - 1 && <br />}
-      </React.Fragment>
-    ));
-  };
 
   // Display modes - segmented with speakers or raw transcript
   const hasSegments = segments && segments.length > 0;
@@ -94,18 +86,26 @@ const TranscriptionDisplay: React.FC<TranscriptionDisplayProps> = ({
               </div>
             )}
             
-            {/* Raw transcript view (used when no segments are available) */}
+            {/* Raw transcript view with improved paragraph formatting */}
             {!hasSegments && (
               <div className="whitespace-pre-wrap break-words">
-                {words.length > 0 ? (
-                  formatParagraphs(words.join(' '))
+                {paragraphs.length > 0 ? (
+                  <div className="space-y-2">
+                    {paragraphs.map((paragraph, index) => (
+                      <p key={index} className="leading-relaxed">
+                        {paragraph}
+                      </p>
+                    ))}
+                  </div>
                 ) : null}
+                
                 {isRecording && interimText && (
-                  <span className="text-muted-foreground">
+                  <p className="text-muted-foreground mt-2">
                     {interimText}{' '}
                     <span className="inline-block w-2 h-5 ml-1 bg-primary opacity-50 animate-pulse"></span>
-                  </span>
+                  </p>
                 )}
+                
                 {isRecording && !interimText && (
                   <span className="inline-block w-2 h-5 ml-1 bg-primary opacity-50 animate-pulse"></span>
                 )}
@@ -115,8 +115,8 @@ const TranscriptionDisplay: React.FC<TranscriptionDisplayProps> = ({
         ) : (
           <div className="h-full flex items-center justify-center text-muted-foreground italic">
             {isRecording 
-              ? "Listening..." 
-              : "Start recording to begin real-time transcription"}
+              ? "Listening to system audio..." 
+              : "Start recording to capture audio from your system"}
           </div>
         )}
       </div>
@@ -143,7 +143,7 @@ const TranscriptionDisplay: React.FC<TranscriptionDisplayProps> = ({
             <span>HIPAA Compliant: All processing happens locally</span>
             <span className="flex items-center gap-1">
               <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse"></div> 
-              Processing audio
+              Capturing system audio
             </span>
           </div>
         </div>
