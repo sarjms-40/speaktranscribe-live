@@ -25,7 +25,7 @@ const TranscriptionDisplay: React.FC<TranscriptionDisplayProps> = ({
   useEffect(() => {
     if (transcript) {
       // Split the transcript into words for animated display
-      const newWords = transcript.split(/\s+/);
+      const newWords = transcript.split(/\s+/).filter(word => word.trim().length > 0);
       setWords(newWords);
     } else {
       setWords([]);
@@ -46,6 +46,16 @@ const TranscriptionDisplay: React.FC<TranscriptionDisplayProps> = ({
     return {
       animationDelay: `${baseDelay * index}s`,
     };
+  };
+
+  // Format paragraph breaks properly - this is crucial for readability
+  const formatParagraphs = (text: string) => {
+    return text.split(/\.\s+/).map((sentence, index, array) => (
+      <React.Fragment key={index}>
+        {sentence}{index < array.length - 1 ? '.' : ''}
+        {index < array.length - 1 && <br />}
+      </React.Fragment>
+    ));
   };
 
   // Display modes - segmented with speakers or raw transcript
@@ -86,16 +96,10 @@ const TranscriptionDisplay: React.FC<TranscriptionDisplayProps> = ({
             
             {/* Raw transcript view (used when no segments are available) */}
             {!hasSegments && (
-              <p className="whitespace-pre-wrap break-words">
-                {words.map((word, index) => (
-                  <span 
-                    key={index} 
-                    className="inline-block animate-fade-in" 
-                    style={getWordStyle(index)}
-                  >
-                    {word}{' '}
-                  </span>
-                ))}
+              <div className="whitespace-pre-wrap break-words">
+                {words.length > 0 ? (
+                  formatParagraphs(words.join(' '))
+                ) : null}
                 {isRecording && interimText && (
                   <span className="text-muted-foreground">
                     {interimText}{' '}
@@ -105,7 +109,7 @@ const TranscriptionDisplay: React.FC<TranscriptionDisplayProps> = ({
                 {isRecording && !interimText && (
                   <span className="inline-block w-2 h-5 ml-1 bg-primary opacity-50 animate-pulse"></span>
                 )}
-              </p>
+              </div>
             )}
           </div>
         ) : (
@@ -138,7 +142,7 @@ const TranscriptionDisplay: React.FC<TranscriptionDisplayProps> = ({
           <div className="flex items-center justify-between">
             <span>HIPAA Compliant: All processing happens locally</span>
             <span className="flex items-center gap-1">
-              <div className="h-2 w-2 bg-green-500 rounded-full"></div> 
+              <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse"></div> 
               Processing audio
             </span>
           </div>

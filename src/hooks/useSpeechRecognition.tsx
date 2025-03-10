@@ -32,6 +32,9 @@ export const useSpeechRecognition = () => {
   const speakersRef = useRef<Speaker[]>([]);
   const segmentsRef = useRef<TranscriptionSegment[]>([]);
   const interimSegmentRef = useRef<string>("");
+  const recognitionRestartAttemptsRef = useRef<number>(0);
+  const maxRecognitionRestartAttempts = 5;
+  const recognitionRestartDelayRef = useRef<number>(1000);
 
   useEffect(() => {
     recognitionRef.current = initSpeechRecognition();
@@ -67,15 +70,17 @@ export const useSpeechRecognition = () => {
     
     if (isFinal) {
       const newSegment: TranscriptionSegment = {
-        text,
+        text: text.trim(),
         timestamp: Date.now(),
         speaker: detectSpeaker()
       };
       
-      segmentsRef.current = [...segmentsRef.current, newSegment];
+      if (newSegment.text) {
+        segmentsRef.current = [...segmentsRef.current, newSegment];
+      }
       interimSegmentRef.current = "";
-    } else {
-      interimSegmentRef.current = text;
+    } else if (text.trim()) {
+      interimSegmentRef.current = text.trim();
     }
   }, [audioSource]);
 
@@ -101,6 +106,38 @@ export const useSpeechRecognition = () => {
     return newSpeaker;
   }, []);
 
+  const restartRecognition = useCallback(() => {
+    if (recognitionRef.current && isRecording && !intentionalStopRef.current) {
+      if (recognitionRestartAttemptsRef.current < maxRecognitionRestartAttempts) {
+        console.log(`Attempting to restart speech recognition (attempt ${recognitionRestartAttemptsRef.current + 1}/${maxRecognitionRestartAttempts})`);
+        
+        setTimeout(() => {
+          try {
+            if (interimResultsRef.current) {
+              finalTranscriptRef.current += interimResultsRef.current + " ";
+              updateTranscriptionSegments(interimResultsRef.current, true);
+              interimResultsRef.current = "";
+            }
+            
+            recognitionRef.current?.start();
+            recognitionRestartAttemptsRef.current++;
+            
+            recognitionRestartDelayRef.current = Math.min(recognitionRestartDelayRef.current * 1.5, 10000);
+            lastActivityRef.current = Date.now();
+          } catch (e) {
+            console.error("Error restarting speech recognition:", e);
+            setError("Speech recognition failed to restart. Please try again manually.");
+            setIsRecording(false);
+          }
+        }, recognitionRestartDelayRef.current);
+      } else {
+        console.log("Maximum restart attempts reached. Stopping recognition.");
+        setError("Speech recognition has disconnected too many times. Please try again.");
+        setIsRecording(false);
+      }
+    }
+  }, [isRecording, updateTranscriptionSegments]);
+
   useEffect(() => {
     if (!recognitionRef.current) return;
 
@@ -109,6 +146,8 @@ export const useSpeechRecognition = () => {
       let newFinalTranscript = '';
       
       lastActivityRef.current = Date.now();
+      recognitionRestartAttemptsRef.current = 0;
+      recognitionRestartDelayRef.current = 1000;
       
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const transcript = event.results[i][0].transcript;
@@ -137,40 +176,49 @@ export const useSpeechRecognition = () => {
     };
 
     const handleError = (event: any) => {
-      console.error("Speech recognition error:", event);
+      console.log("Speech recognition error:", event);
       
-      setError(getSpeechErrorMessage(event.error));
-      
-      if (!intentionalStopRef.current) {
+      if (event.error === 'no-speech') {
+        console.log("No speech detected, continuing silently");
+      } else if (event.error === 'network') {
+        console.log("Network error in speech recognition, attempting to restart");
+        restartRecognition();
+      } else if (event.error === 'aborted' && !intentionalStopRef.current) {
+        console.log("Speech recognition aborted unexpectedly, attempting to restart");
+        restartRecognition();
+      } else if (!intentionalStopRef.current) {
+        setError(getSpeechErrorMessage(event.error));
         setHasRecognitionEnded(true);
+        setIsRecording(false);
       }
-      
-      setIsRecording(false);
     };
 
     const handleEnd = () => {
       console.log("Speech recognition ended, intentional:", intentionalStopRef.current);
       
       if (!intentionalStopRef.current) {
-        setHasRecognitionEnded(true);
-        setIsRecording(false);
+        restartRecognition();
       } else {
         intentionalStopRef.current = false;
-      }
-      
-      if (isRecording && recognitionRef.current && !intentionalStopRef.current) {
-        try {
-          recognitionRef.current.start();
-        } catch (e) {
-          console.log("Error restarting recognition:", e);
-        }
       }
     };
 
     recognitionRef.current.onresult = handleResult;
     recognitionRef.current.onerror = handleError;
     recognitionRef.current.onend = handleEnd;
-  }, [isRecording, updateTranscriptionSegments]);
+    
+    if (recognitionRef.current.continuous !== undefined) {
+      recognitionRef.current.continuous = true;
+    }
+    
+    if (recognitionRef.current.interimResults !== undefined) {
+      recognitionRef.current.interimResults = true;
+    }
+    
+    if (recognitionRef.current.maxAlternatives !== undefined) {
+      recognitionRef.current.maxAlternatives = 3;
+    }
+  }, [isRecording, updateTranscriptionSegments, restartRecognition]);
 
   useEffect(() => {
     if (isRecording) {
@@ -178,11 +226,10 @@ export const useSpeechRecognition = () => {
         const now = Date.now();
         const inactivityTime = now - lastActivityRef.current;
         
-        if (inactivityTime > 60000) {
+        if (inactivityTime > 180000) {
           console.log(`No speech activity detected for ${inactivityTime/1000} seconds`);
-          setHasRecognitionEnded(true);
         }
-      }, 10000);
+      }, 30000);
     } else {
       if (inactivityTimerRef.current) {
         window.clearInterval(inactivityTimerRef.current);
@@ -243,11 +290,13 @@ export const useSpeechRecognition = () => {
       segmentsRef.current = [];
       intentionalStopRef.current = false;
       lastActivityRef.current = Date.now();
+      recognitionRestartAttemptsRef.current = 0;
+      recognitionRestartDelayRef.current = 1000;
       duplicateDetectorRef.current.reset();
       silenceDetectorRef.current.reset();
       silenceDetectorRef.current.configure({
-        silenceThreshold: -65,
-        minSilenceDuration: 2000
+        silenceThreshold: -75,
+        minSilenceDuration: 5000
       });
       speakerDiarizationRef.current.reset();
       speakersRef.current = [];
@@ -289,6 +338,14 @@ export const useSpeechRecognition = () => {
             }
           }
         );
+      }
+      
+      if (recognitionRef.current.continuous !== undefined) {
+        recognitionRef.current.continuous = true;
+      }
+      
+      if (recognitionRef.current.interimResults !== undefined) {
+        recognitionRef.current.interimResults = true;
       }
       
       recognitionRef.current.start();

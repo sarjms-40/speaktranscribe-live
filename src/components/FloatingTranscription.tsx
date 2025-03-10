@@ -1,7 +1,8 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import { Speaker, TranscriptionSegment } from "@/types/speechRecognition";
 import SpeakerSegment from "./SpeakerSegment";
-import { Mic, MicOff, Settings, Minus, X, Move } from "lucide-react";
+import { Mic, MicOff, Minus, X, Move } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface FloatingTranscriptionProps {
@@ -72,19 +73,29 @@ const FloatingTranscription: React.FC<FloatingTranscriptionProps> = ({
   }, [isDragging, dragOffset]);
 
   useEffect(() => {
-    if (interimText) {
+    if (transcript || interimText) {
       setLastActivity(Date.now());
       setIsActive(true);
       const timeout = setTimeout(() => setIsActive(false), 2000);
       return () => clearTimeout(timeout);
     }
-  }, [interimText]);
+  }, [transcript, interimText]);
 
   useEffect(() => {
     if (containerRef.current && !minimized) {
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
     }
   }, [transcript, segments, interimText, minimized]);
+
+  // Format paragraph breaks for better readability
+  const formatParagraphs = (text: string) => {
+    return text.split(/\.\s+/).map((sentence, index, array) => (
+      <React.Fragment key={index}>
+        {sentence}{index < array.length - 1 ? '.' : ''}
+        {index < array.length - 1 && <br />}
+      </React.Fragment>
+    ));
+  };
 
   return (
     <div 
@@ -195,15 +206,15 @@ const FloatingTranscription: React.FC<FloatingTranscriptionProps> = ({
               )}
               
               {segments.length === 0 && (
-                <p className="whitespace-pre-wrap break-words">
-                  {transcript}
+                <div className="whitespace-pre-wrap break-words">
+                  {formatParagraphs(transcript)}
                   {isRecording && interimText && (
                     <span className="text-muted-foreground">
                       {' '}{interimText}{' '}
                       <span className="inline-block w-2 h-5 ml-1 bg-primary opacity-50 animate-pulse"></span>
                     </span>
                   )}
-                </p>
+                </div>
               )}
             </div>
           ) : (

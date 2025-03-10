@@ -65,7 +65,7 @@ export const useCallRecording = () => {
     loadSavedRecords();
   }, []);
 
-  // Set up auto-save inactivity timer (save if no speech detected for 2 minutes - increased from 30 seconds)
+  // Set up auto-save inactivity timer (increased to 5 minutes)
   useEffect(() => {
     if (isRecording && transcript) {
       // Clear any existing timeout
@@ -79,7 +79,7 @@ export const useCallRecording = () => {
           console.log("Auto-saving call due to inactivity");
           endCall();
         }
-      }, 120000); // 2 minutes of inactivity (increased from 30 seconds)
+      }, 300000); // 5 minutes of inactivity (increased from 2 minutes)
     }
     
     return () => {
@@ -128,8 +128,8 @@ export const useCallRecording = () => {
       });
     } else {
       toast({
-        title: "Call Started",
-        description: `Using ${source || audioSource} for audio capture`,
+        title: "Call Recording Started",
+        description: "Listening to your voice...",
         duration: 3000,
       });
     }
@@ -164,7 +164,7 @@ export const useCallRecording = () => {
         
         toast({
           title: "Call Saved",
-          description: `Call transcript (${duration}s) saved successfully.`,
+          description: `Transcript (${duration}s) saved successfully.`,
         });
         
         // Refresh the records list
