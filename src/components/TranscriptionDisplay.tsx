@@ -2,6 +2,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Speaker, TranscriptionSegment } from "@/types/speechRecognition";
 import SpeakerSegment from "./SpeakerSegment";
+import { AudioSource } from "@/utils/systemAudioCapture";
 
 interface TranscriptionDisplayProps {
   transcript: string;
@@ -9,6 +10,7 @@ interface TranscriptionDisplayProps {
   speakers?: Speaker[];
   segments?: TranscriptionSegment[];
   interimText?: string;
+  audioSource?: AudioSource;
 }
 
 const TranscriptionDisplay: React.FC<TranscriptionDisplayProps> = ({
@@ -16,7 +18,8 @@ const TranscriptionDisplay: React.FC<TranscriptionDisplayProps> = ({
   isRecording,
   speakers = [],
   segments = [],
-  interimText = ""
+  interimText = "",
+  audioSource = "microphone"
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [words, setWords] = useState<string[]>([]);
@@ -30,11 +33,18 @@ const TranscriptionDisplay: React.FC<TranscriptionDisplayProps> = ({
       setWords(newWords);
       
       // Create paragraphs for better readability
-      // Split on sentences that end with period followed by space
+      // Split on sentences that end with period followed by space, question mark, or exclamation
       const newParagraphs = transcript
-        .split(/\.(?:\s+)/)
+        .split(/[.!?](?:\s+)/)
         .filter(para => para.trim().length > 0)
-        .map(para => para.trim() + (para.endsWith('.') ? '' : '.'));
+        .map(para => {
+          const trimmed = para.trim();
+          // Add appropriate punctuation if missing
+          if (!/[.!?]$/.test(trimmed)) {
+            return trimmed + '.';
+          }
+          return trimmed;
+        });
       
       setParagraphs(newParagraphs);
     } else {
@@ -52,6 +62,12 @@ const TranscriptionDisplay: React.FC<TranscriptionDisplayProps> = ({
 
   // Display modes - segmented with speakers or raw transcript
   const hasSegments = segments && segments.length > 0;
+  
+  // Check if we need to display the listening prompt
+  const showListeningPrompt = isRecording && !transcript && !hasSegments && !interimText;
+  
+  // Check if we have content to display
+  const hasContent = transcript || hasSegments || interimText;
 
   return (
     <div 
@@ -59,9 +75,9 @@ const TranscriptionDisplay: React.FC<TranscriptionDisplayProps> = ({
       className="transcription-container min-h-[300px] max-h-[500px] font-light bg-white/50 dark:bg-black/30 p-4 rounded-lg border border-border/60 shadow-sm overflow-auto"
     >
       <div className="text-left">
-        {transcript || hasSegments ? (
+        {hasContent ? (
           <div>
-            <div className="mb-2 text-xs text-muted-foreground">Real-time Speech:</div>
+            <div className="mb-2 text-xs text-muted-foreground">Real-time Transcription:</div>
             
             {/* Speaker segmented view */}
             {hasSegments && (
@@ -106,17 +122,36 @@ const TranscriptionDisplay: React.FC<TranscriptionDisplayProps> = ({
                   </p>
                 )}
                 
-                {isRecording && !interimText && (
+                {isRecording && !interimText && !showListeningPrompt && (
                   <span className="inline-block w-2 h-5 ml-1 bg-primary opacity-50 animate-pulse"></span>
                 )}
               </div>
             )}
           </div>
         ) : (
-          <div className="h-full flex items-center justify-center text-muted-foreground italic">
-            {isRecording 
-              ? "Listening to system audio..." 
-              : "Start recording to capture audio from your system"}
+          <div className="h-full flex flex-col gap-3 items-center justify-center text-muted-foreground">
+            {isRecording ? (
+              <>
+                <div className="flex items-center gap-2">
+                  <div className="h-3 w-3 bg-green-500 rounded-full animate-pulse"></div>
+                  <span className="font-medium">Listening to system audio...</span>
+                </div>
+                <p className="text-sm max-w-md text-center">
+                  {audioSource === 'system' || audioSource === 'multimedia' ? 
+                    "Capturing system sounds. Play audio or video content to see transcription." :
+                    audioSource === 'meeting' ? 
+                    "Capturing meeting audio. Start your meeting to see transcription." :
+                    "Waiting for audio input. Speak or play content to begin transcription."}
+                </p>
+              </>
+            ) : (
+              <>
+                <span className="font-medium">No transcription yet</span>
+                <p className="text-sm max-w-md text-center">
+                  Start recording to capture audio from your system or microphone
+                </p>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -124,7 +159,7 @@ const TranscriptionDisplay: React.FC<TranscriptionDisplayProps> = ({
       {speakers.length > 0 && (
         <div className="mt-4 border-t border-border/30 pt-3">
           <div className="text-xs text-muted-foreground mb-1">Detected Speakers:</div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             {speakers.map(speaker => (
               <div 
                 key={speaker.id}
@@ -143,7 +178,7 @@ const TranscriptionDisplay: React.FC<TranscriptionDisplayProps> = ({
             <span>HIPAA Compliant: All processing happens locally</span>
             <span className="flex items-center gap-1">
               <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse"></div> 
-              Capturing system audio
+              {hasContent ? "Transcribing audio" : "Waiting for audio"}
             </span>
           </div>
         </div>

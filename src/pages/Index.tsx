@@ -147,6 +147,7 @@ const Index = () => {
               speakers={speakers}
               segments={segments}
               interimText={interimText}
+              audioSource={audioSource}
             />
             
             {error && (
@@ -292,6 +293,7 @@ const Index = () => {
           onStartRecording={handleStartCall}
           onStopRecording={endCall}
           onClose={() => setShowFloatingWindow(false)}
+          audioSource={audioSource}
         />
       )}
     </div>
